@@ -83,6 +83,16 @@ export default async function StaffPage() {
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-2">
+                        {activeTag ? (
+                          <a
+                            href={`/t/${restaurant.slug}/${encodeURIComponent(activeTag.nfc_code)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-full px-3 py-1.5 text-xs font-semibold text-muted hover:bg-background hover:text-dark"
+                          >
+                            Perfil público ↗
+                          </a>
+                        ) : null}
                         <Link
                           href={`/staff/${member.id}/nfc`}
                           className="rounded-full px-3 py-1.5 text-xs font-semibold text-pink hover:bg-pink/5"
