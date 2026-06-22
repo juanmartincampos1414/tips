@@ -59,6 +59,7 @@ export default async function PublicStaffProfile({
         staffId={staff.id}
         restaurantId={restaurant.id}
         firstName={staff.name.split(" ")[0]}
+        restaurantName={restaurant.name}
       />
 
       <p className="mt-8 text-xs font-medium text-muted">Tips</p>

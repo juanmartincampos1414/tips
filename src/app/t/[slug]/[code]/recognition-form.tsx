@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 
 import { createRecognition, type RecognitionState } from "./actions";
+import { ReviewRouting } from "./review-routing";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -14,10 +15,12 @@ export function RecognitionForm({
   staffId,
   restaurantId,
   firstName,
+  restaurantName,
 }: {
   staffId: string;
   restaurantId: string;
   firstName: string;
+  restaurantName: string;
 }) {
   const action = createRecognition.bind(null, staffId, restaurantId);
   const [state, formAction, pending] = useActionState(action, initial);
@@ -26,19 +29,14 @@ export function RecognitionForm({
   const [custom, setCustom] = useState(false);
   const [rating, setRating] = useState(0);
 
-  if (state.ok) {
+  if (state.ok && state.route && state.reviewRequestId) {
     return (
-      <div className="mt-8 w-full rounded-2xl border border-border bg-card p-8 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/10 text-2xl">
-          ✓
-        </div>
-        <p className="mt-4 text-xl font-bold text-dark">
-          ¡Gracias por reconocer a {firstName}!
-        </p>
-        <p className="mt-2 text-sm text-muted">
-          Tu reconocimiento quedó registrado. 💗
-        </p>
-      </div>
+      <ReviewRouting
+        route={state.route}
+        reviewRequestId={state.reviewRequestId}
+        firstName={firstName}
+        restaurantName={restaurantName}
+      />
     );
   }
 

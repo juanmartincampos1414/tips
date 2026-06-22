@@ -12,6 +12,8 @@ export type NfcTagStatus = "active" | "inactive";
 export type VisitSource = "nfc" | "reward_redemption" | "manual";
 export type PaymentStatus = "pending" | "completed" | "failed" | "refunded";
 export type RecognitionSource = "nfc" | "qr" | "manual";
+export type ReviewRoute = "public_review" | "private_feedback";
+export type ReviewStatus = "pending" | "completed" | "ignored";
 
 export type Json =
   | string
@@ -181,6 +183,34 @@ export interface Database {
         };
         Update: Partial<
           Database["public"]["Tables"]["recognition_events"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      review_requests: {
+        Row: {
+          id: string;
+          recognition_event_id: string;
+          restaurant_id: string;
+          staff_id: string;
+          route: ReviewRoute;
+          status: ReviewStatus;
+          feedback: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          recognition_event_id: string;
+          restaurant_id: string;
+          staff_id: string;
+          route: ReviewRoute;
+          status?: ReviewStatus;
+          feedback?: string | null;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["review_requests"]["Insert"]
         >;
         Relationships: [];
       };
