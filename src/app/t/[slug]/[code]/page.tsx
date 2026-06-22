@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { recordVisit, resolvePublicStaff } from "@/lib/queries";
 
+import { RecognitionForm } from "./recognition-form";
+
 // Reached by a real NFC tap (full page load) — always render fresh and record
 // the visit on open.
 export const dynamic = "force-dynamic";
@@ -53,15 +55,11 @@ export default async function PublicStaffProfile({
       ) : null}
       <p className="mt-1 text-sm text-muted">{restaurant.name}</p>
 
-      <div className="mt-10 w-full rounded-2xl border border-border bg-card p-5">
-        <p className="text-base font-semibold text-dark">
-          ¡Gracias por tu visita! 💗
-        </p>
-        <p className="mt-1 text-sm text-muted">
-          Pronto vas a poder reconocer a {staff.name.split(" ")[0]} con una
-          propina y una reseña.
-        </p>
-      </div>
+      <RecognitionForm
+        staffId={staff.id}
+        restaurantId={restaurant.id}
+        firstName={staff.name.split(" ")[0]}
+      />
 
       <p className="mt-8 text-xs font-medium text-muted">Tips</p>
     </main>

@@ -5,12 +5,19 @@ import { archiveStaff } from "@/app/actions";
 import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { getCurrentRestaurant, getStaffWithNfc } from "@/lib/queries";
+import {
+  getCurrentRestaurant,
+  getStaffMetrics,
+  getStaffWithNfc,
+} from "@/lib/queries";
 import { cn } from "@/lib/utils";
+
+const money = (n: number) => "$" + n.toLocaleString("es-AR");
 
 export default async function StaffPage() {
   const restaurant = (await getCurrentRestaurant())!;
   const staff = await getStaffWithNfc(restaurant.id);
+  const metrics = await getStaffMetrics(staff.map((s) => s.id));
 
   return (
     <div className="mx-auto w-full max-w-4xl">
@@ -44,6 +51,9 @@ export default async function StaffPage() {
               <tr>
                 <th className="px-5 py-3 font-medium">Camarero</th>
                 <th className="px-5 py-3 font-medium">Cargo</th>
+                <th className="px-5 py-3 font-medium">Rating</th>
+                <th className="px-5 py-3 font-medium">Propinas</th>
+                <th className="px-5 py-3 font-medium">Reconoc.</th>
                 <th className="px-5 py-3 font-medium">NFC</th>
                 <th className="px-5 py-3 text-right font-medium">Acciones</th>
               </tr>
@@ -68,6 +78,21 @@ export default async function StaffPage() {
                     </td>
                     <td className="px-5 py-3 text-muted">
                       {member.role ?? "—"}
+                    </td>
+                    <td className="px-5 py-3">
+                      {metrics[member.id]?.averageRating != null ? (
+                        <span className="font-medium text-dark">
+                          ★ {metrics[member.id].averageRating!.toFixed(1)}
+                        </span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 font-medium text-dark">
+                      {money(metrics[member.id]?.totalTips ?? 0)}
+                    </td>
+                    <td className="px-5 py-3 text-muted">
+                      {metrics[member.id]?.recognitionEvents ?? 0}
                     </td>
                     <td className="px-5 py-3">
                       {activeTag ? (

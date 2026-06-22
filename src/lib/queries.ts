@@ -99,6 +99,66 @@ export async function getStaffById(
   return (data as StaffWithNfc | null) ?? null;
 }
 
+export type StaffMetrics = {
+  averageRating: number | null;
+  totalTips: number;
+  recognitionEvents: number;
+};
+
+/**
+ * Per-staff recognition metrics (Sprint 02A · FR-010): average rating,
+ * total tips (completed), and recognition event count. Aggregated in JS —
+ * fine for a single restaurant's team size.
+ */
+export async function getStaffMetrics(
+  staffIds: string[],
+): Promise<Record<string, StaffMetrics>> {
+  const empty = (): StaffMetrics => ({
+    averageRating: null,
+    totalTips: 0,
+    recognitionEvents: 0,
+  });
+  const out: Record<string, StaffMetrics> = {};
+  staffIds.forEach((id) => (out[id] = empty()));
+  if (staffIds.length === 0) return out;
+
+  const supabase = createAdminClient();
+  const [{ data: ratings }, { data: tips }, { data: events }] =
+    await Promise.all([
+      supabase.from("ratings").select("staff_id, rating").in("staff_id", staffIds),
+      supabase
+        .from("tips")
+        .select("staff_id, amount, payment_status")
+        .in("staff_id", staffIds),
+      supabase
+        .from("recognition_events")
+        .select("staff_id")
+        .in("staff_id", staffIds),
+    ]);
+
+  const ratingSum: Record<string, number> = {};
+  const ratingCount: Record<string, number> = {};
+  (ratings ?? []).forEach((r) => {
+    ratingSum[r.staff_id] = (ratingSum[r.staff_id] ?? 0) + r.rating;
+    ratingCount[r.staff_id] = (ratingCount[r.staff_id] ?? 0) + 1;
+  });
+  staffIds.forEach((id) => {
+    if (ratingCount[id])
+      out[id].averageRating = ratingSum[id] / ratingCount[id];
+  });
+
+  (tips ?? []).forEach((t) => {
+    if (t.payment_status === "completed")
+      out[t.staff_id].totalTips += Number(t.amount);
+  });
+
+  (events ?? []).forEach((e) => {
+    out[e.staff_id].recognitionEvents += 1;
+  });
+
+  return out;
+}
+
 export type DashboardStats = {
   totalStaff: number;
   totalVisits: number;

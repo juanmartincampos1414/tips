@@ -10,6 +10,8 @@ export type RestaurantStatus = "active" | "inactive" | "archived";
 export type StaffStatus = "active" | "inactive" | "archived";
 export type NfcTagStatus = "active" | "inactive";
 export type VisitSource = "nfc" | "reward_redemption" | "manual";
+export type PaymentStatus = "pending" | "completed" | "failed" | "refunded";
+export type RecognitionSource = "nfc" | "qr" | "manual";
 
 export type Json =
   | string
@@ -112,6 +114,74 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["visits"]["Insert"]>;
+        Relationships: [];
+      };
+      tips: {
+        Row: {
+          id: string;
+          staff_id: string;
+          guest_id: string | null;
+          amount: number;
+          currency: string;
+          payment_status: PaymentStatus;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          staff_id: string;
+          guest_id?: string | null;
+          amount: number;
+          currency?: string;
+          payment_status?: PaymentStatus;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["tips"]["Insert"]>;
+        Relationships: [];
+      };
+      ratings: {
+        Row: {
+          id: string;
+          staff_id: string;
+          guest_id: string | null;
+          rating: number;
+          comment: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          staff_id: string;
+          guest_id?: string | null;
+          rating: number;
+          comment?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["ratings"]["Insert"]>;
+        Relationships: [];
+      };
+      recognition_events: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          staff_id: string;
+          guest_id: string | null;
+          tip_id: string | null;
+          rating_id: string | null;
+          source: RecognitionSource;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          staff_id: string;
+          guest_id?: string | null;
+          tip_id?: string | null;
+          rating_id?: string | null;
+          source?: RecognitionSource;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["recognition_events"]["Insert"]
+        >;
         Relationships: [];
       };
     };
