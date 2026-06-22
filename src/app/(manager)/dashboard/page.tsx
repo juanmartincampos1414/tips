@@ -3,17 +3,29 @@ import Link from "next/link";
 import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  getCaptureStats,
   getCurrentRestaurant,
   getDashboardStats,
 } from "@/lib/queries";
 
 export default async function DashboardPage() {
   const restaurant = (await getCurrentRestaurant())!;
-  const stats = await getDashboardStats(restaurant.id);
+  const [stats, capture] = await Promise.all([
+    getDashboardStats(restaurant.id),
+    getCaptureStats(restaurant.id),
+  ]);
 
   const kpis = [
     { label: "Total camareros", value: stats.totalStaff },
     { label: "Total visitas", value: stats.totalVisits },
+    { label: "Clientes capturados", value: capture.guestsCaptured },
+    {
+      label: "Guest Capture Rate",
+      value:
+        capture.captureRate == null
+          ? "—"
+          : `${Math.round(capture.captureRate * 100)}%`,
+    },
   ];
 
   return (
@@ -42,8 +54,8 @@ export default async function DashboardPage() {
       </div>
 
       <p className="mt-8 text-xs text-muted">
-        Sprint 01 · Recognition Layer — propinas, reseñas, CRM y rewards llegan en
-        los próximos sprints.
+        Guest Capture Rate = clientes capturados ÷ recognition events. Rewards y
+        wallet llegan en los próximos sprints.
       </p>
     </div>
   );

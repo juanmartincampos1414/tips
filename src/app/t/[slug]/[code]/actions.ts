@@ -1,7 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
-
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ReviewRoute } from "@/lib/database.types";
 
@@ -10,6 +8,7 @@ export type RecognitionState = {
   error?: string;
   route?: ReviewRoute;
   reviewRequestId?: string;
+  recognitionEventId?: string;
 };
 
 /**
@@ -84,17 +83,21 @@ export async function createRecognition(
     .single();
   if (rrErr) return { error: rrErr.message };
 
-  return { ok: true, route, reviewRequestId: reviewRequest.id };
+  return {
+    ok: true,
+    route,
+    reviewRequestId: reviewRequest.id,
+    recognitionEventId: event.id,
+  };
 }
 
-/** Guest tapped "leave a Google review": mark completed, then go to Google. */
-export async function completeReview(reviewRequestId: string, url: string) {
+/** Guest tapped "leave a Google review": mark the request completed. */
+export async function completeReview(reviewRequestId: string) {
   const supabase = createAdminClient();
   await supabase
     .from("review_requests")
     .update({ status: "completed", completed_at: new Date().toISOString() })
     .eq("id", reviewRequestId);
-  redirect(url);
 }
 
 export type FeedbackState = { done?: boolean; error?: string };
@@ -129,4 +132,76 @@ export async function ignoreReview(reviewRequestId: string) {
     .from("review_requests")
     .update({ status: "ignored", completed_at: new Date().toISOString() })
     .eq("id", reviewRequestId);
+}
+
+export type CaptureState = { done?: boolean; error?: string };
+
+/**
+ * Guest Capture (Sprint 03 · FR-011/012/015/021). Upserts a guest by email
+ * within the restaurant, links them to the recognition event, and records the
+ * serving staff as last_staff_id. Runs after recognition — never before.
+ */
+export async function captureGuest(
+  recognitionEventId: string,
+  restaurantId: string,
+  staffId: string,
+  _prev: CaptureState,
+  formData: FormData,
+): Promise<CaptureState> {
+  const name = (formData.get("name") as string | null)?.trim() ?? "";
+  const email = (formData.get("email") as string | null)?.trim() ?? "";
+  const phone = (formData.get("phone") as string | null)?.trim() ?? "";
+  const consent = formData.get("consent") === "on";
+
+  if (!name) return { error: "Ingresá tu nombre." };
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return { error: "Ingresá un email válido." };
+
+  const supabase = createAdminClient();
+
+  // FR-012: create if new, update if the email already exists in this restaurant.
+  const { data: existing } = await supabase
+    .from("guests")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .ilike("email", email)
+    .maybeSingle();
+
+  let guestId: string;
+  if (existing) {
+    guestId = existing.id;
+    await supabase
+      .from("guests")
+      .update({
+        name,
+        phone: phone || null,
+        marketing_consent: consent,
+        last_staff_id: staffId,
+      })
+      .eq("id", guestId);
+  } else {
+    const { data: created, error: insErr } = await supabase
+      .from("guests")
+      .insert({
+        restaurant_id: restaurantId,
+        name,
+        email,
+        phone: phone || null,
+        marketing_consent: consent,
+        last_staff_id: staffId,
+        source: "recognition",
+      })
+      .select("id")
+      .single();
+    if (insErr) return { error: insErr.message };
+    guestId = created.id;
+  }
+
+  // AC-021: associate the guest with the recognition event.
+  await supabase
+    .from("recognition_events")
+    .update({ guest_id: guestId })
+    .eq("id", recognitionEventId);
+
+  return { done: true };
 }

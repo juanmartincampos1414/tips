@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 
 import { createRecognition, type RecognitionState } from "./actions";
-import { ReviewRouting } from "./review-routing";
+import { PostRecognition } from "./post-recognition";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -29,11 +29,19 @@ export function RecognitionForm({
   const [custom, setCustom] = useState(false);
   const [rating, setRating] = useState(0);
 
-  if (state.ok && state.route && state.reviewRequestId) {
+  if (
+    state.ok &&
+    state.route &&
+    state.reviewRequestId &&
+    state.recognitionEventId
+  ) {
     return (
-      <ReviewRouting
+      <PostRecognition
         route={state.route}
         reviewRequestId={state.reviewRequestId}
+        recognitionEventId={state.recognitionEventId}
+        restaurantId={restaurantId}
+        staffId={staffId}
         firstName={firstName}
         restaurantName={restaurantName}
       />

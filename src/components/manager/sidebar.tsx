@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/staff", label: "Camareros" },
+  { href: "/clientes", label: "Clientes" },
 ];
 
 export function Sidebar({ restaurantName }: { restaurantName: string }) {

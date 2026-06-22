@@ -159,6 +159,50 @@ export async function getStaffMetrics(
   return out;
 }
 
+export type CaptureStats = {
+  guestsCaptured: number;
+  recognitionEvents: number;
+  captureRate: number | null; // guests ÷ recognition events
+};
+
+/** Sprint 03 main metric — Guest Capture Rate = guests ÷ recognition events. */
+export async function getCaptureStats(
+  restaurantId: string,
+): Promise<CaptureStats> {
+  const supabase = createAdminClient();
+  const [{ count: guests }, { count: events }] = await Promise.all([
+    supabase
+      .from("guests")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId),
+    supabase
+      .from("recognition_events")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId),
+  ]);
+  const guestsCaptured = guests ?? 0;
+  const recognitionEvents = events ?? 0;
+  return {
+    guestsCaptured,
+    recognitionEvents,
+    captureRate: recognitionEvents > 0 ? guestsCaptured / recognitionEvents : null,
+  };
+}
+
+type Guest = Database["public"]["Tables"]["guests"]["Row"];
+export type GuestWithStaff = Guest & { staff: { name: string } | null };
+
+/** CRM base — captured guests for a restaurant, newest first. */
+export async function getGuests(restaurantId: string): Promise<GuestWithStaff[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("guests")
+    .select("*, staff:last_staff_id(name)")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+  return (data as GuestWithStaff[] | null) ?? [];
+}
+
 export type DashboardStats = {
   totalStaff: number;
   totalVisits: number;

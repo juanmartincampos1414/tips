@@ -14,6 +14,7 @@ export type PaymentStatus = "pending" | "completed" | "failed" | "refunded";
 export type RecognitionSource = "nfc" | "qr" | "manual";
 export type ReviewRoute = "public_review" | "private_feedback";
 export type ReviewStatus = "pending" | "completed" | "ignored";
+export type GuestSource = "recognition" | "manual" | "import";
 
 export type Json =
   | string
@@ -212,6 +213,34 @@ export interface Database {
         Update: Partial<
           Database["public"]["Tables"]["review_requests"]["Insert"]
         >;
+        Relationships: [];
+      };
+      guests: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          name: string | null;
+          email: string | null;
+          phone: string | null;
+          source: GuestSource;
+          marketing_consent: boolean;
+          last_staff_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          source?: GuestSource;
+          marketing_consent?: boolean;
+          last_staff_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["guests"]["Insert"]>;
         Relationships: [];
       };
     };
