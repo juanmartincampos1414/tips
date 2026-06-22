@@ -202,3 +202,85 @@ export async function assignNfc(
   revalidatePath("/staff");
   redirect("/staff");
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 04A · Reward templates (FR-018)
+// ---------------------------------------------------------------------------
+export async function createRewardTemplate(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const restaurant = await getCurrentRestaurant();
+  if (!restaurant) redirect("/setup");
+
+  const title = str(formData, "title");
+  const rewardType = str(formData, "reward_type");
+  const value = Number(str(formData, "value") || "0");
+  const expirationDays = Number(str(formData, "expiration_days") || "30");
+
+  const fieldErrors: Record<string, string> = {};
+  if (!title) fieldErrors.title = "Poné un nombre al beneficio.";
+  if (
+    !["cashback_percentage", "cashback_fixed", "free_item", "special_benefit"].includes(
+      rewardType,
+    )
+  )
+    fieldErrors.reward_type = "Elegí un tipo.";
+  if (Number.isNaN(value) || value < 0) fieldErrors.value = "Valor inválido.";
+  if (!Number.isInteger(expirationDays) || expirationDays < 1)
+    fieldErrors.expiration_days = "Días inválidos.";
+  if (Object.keys(fieldErrors).length) return { fieldErrors };
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("reward_templates").insert({
+    restaurant_id: restaurant.id,
+    title,
+    reward_type: rewardType as
+      | "cashback_percentage"
+      | "cashback_fixed"
+      | "free_item"
+      | "special_benefit",
+    value,
+    expiration_days: expirationDays,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/recompensas");
+  redirect("/recompensas");
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 04A · Reward claim → Return Visit (FR-021/022)
+// ---------------------------------------------------------------------------
+export async function claimReward(formData: FormData): Promise<void> {
+  const rewardId = str(formData, "reward_id");
+  if (!rewardId) return;
+
+  const supabase = createAdminClient();
+  const { data: reward } = await supabase
+    .from("rewards")
+    .select("id, guest_id, restaurant_id, status")
+    .eq("id", rewardId)
+    .maybeSingle();
+
+  // R7: a redeemed reward can't be reused.
+  if (!reward || reward.status !== "active") return;
+
+  await supabase
+    .from("rewards")
+    .update({ status: "claimed" })
+    .eq("id", reward.id);
+  await supabase.from("reward_claims").insert({
+    reward_id: reward.id,
+    guest_id: reward.guest_id,
+    restaurant_id: reward.restaurant_id,
+  });
+  await supabase.from("return_visits").insert({
+    guest_id: reward.guest_id,
+    reward_id: reward.id,
+    restaurant_id: reward.restaurant_id,
+  });
+
+  revalidatePath("/recompensas");
+  revalidatePath("/dashboard");
+}

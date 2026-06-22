@@ -10,6 +10,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/staff", label: "Camareros" },
   { href: "/clientes", label: "Clientes" },
+  { href: "/recompensas", label: "Recompensas" },
 ];
 
 export function Sidebar({ restaurantName }: { restaurantName: string }) {

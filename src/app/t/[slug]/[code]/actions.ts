@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ReviewRoute } from "@/lib/database.types";
+import { DEFAULT_TEMPLATE, rewardValueLabel } from "@/lib/rewards";
 
 export type RecognitionState = {
   ok?: boolean;
@@ -134,7 +135,67 @@ export async function ignoreReview(reviewRequestId: string) {
     .eq("id", reviewRequestId);
 }
 
-export type CaptureState = { done?: boolean; error?: string };
+export type EmittedReward = {
+  title: string;
+  valueLabel: string;
+  expiration: string;
+};
+
+export type CaptureState = {
+  done?: boolean;
+  error?: string;
+  reward?: EmittedReward;
+};
+
+/** Emit a reward for a guest from the restaurant's template (FR-014). */
+async function emitReward(
+  supabase: ReturnType<typeof createAdminClient>,
+  restaurantId: string,
+  guestId: string,
+): Promise<EmittedReward | undefined> {
+  // Use the restaurant's active template, or create a default one if none.
+  let { data: template } = await supabase
+    .from("reward_templates")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!template) {
+    const { data: created } = await supabase
+      .from("reward_templates")
+      .insert({ restaurant_id: restaurantId, ...DEFAULT_TEMPLATE })
+      .select("*")
+      .single();
+    template = created;
+  }
+  if (!template) return undefined;
+
+  const expiration = new Date(
+    Date.now() + template.expiration_days * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const { error } = await supabase.from("rewards").insert({
+    guest_id: guestId,
+    restaurant_id: restaurantId,
+    template_id: template.id,
+    title: template.title,
+    reward_type: template.reward_type,
+    value: template.value,
+    source: "recognition",
+    status: "active",
+    expiration_date: expiration,
+  });
+  if (error) return undefined;
+
+  return {
+    title: template.title,
+    valueLabel: rewardValueLabel(template.reward_type, template.value),
+    expiration,
+  };
+}
 
 /**
  * Guest Capture (Sprint 03 · FR-011/012/015/021). Upserts a guest by email
@@ -203,5 +264,8 @@ export async function captureGuest(
     .update({ guest_id: guestId })
     .eq("id", recognitionEventId);
 
-  return { done: true };
+  // FR-014: emit a reward automatically.
+  const reward = await emitReward(supabase, restaurantId, guestId);
+
+  return { done: true, reward };
 }

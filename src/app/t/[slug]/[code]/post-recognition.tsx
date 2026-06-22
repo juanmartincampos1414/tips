@@ -8,13 +8,14 @@ import {
   ignoreReview,
   submitFeedback,
   type CaptureState,
+  type EmittedReward,
   type FeedbackState,
 } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import type { ReviewRoute } from "@/lib/database.types";
 
-type Phase = "review" | "capture" | "done";
+type Phase = "review" | "capture" | "reward" | "done";
 
 export function PostRecognition(props: {
   route: ReviewRoute;
@@ -26,6 +27,7 @@ export function PostRecognition(props: {
   restaurantName: string;
 }) {
   const [phase, setPhase] = useState<Phase>("review");
+  const [reward, setReward] = useState<EmittedReward | null>(null);
 
   if (phase === "review")
     return (
@@ -43,11 +45,53 @@ export function PostRecognition(props: {
         recognitionEventId={props.recognitionEventId}
         restaurantId={props.restaurantId}
         staffId={props.staffId}
-        onDone={() => setPhase("done")}
+        onDone={(emitted) => {
+          if (emitted) {
+            setReward(emitted);
+            setPhase("reward");
+          } else {
+            setPhase("done");
+          }
+        }}
       />
     );
 
+  if (phase === "reward" && reward)
+    return <RewardSuccess reward={reward} firstName={props.firstName} />;
+
   return <ThankYou firstName={props.firstName} />;
+}
+
+function RewardSuccess({
+  reward,
+  firstName,
+}: {
+  reward: EmittedReward;
+  firstName: string;
+}) {
+  const expDate = new Date(reward.expiration).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+  return (
+    <div className="mt-8 w-full text-center">
+      <p className="text-lg font-bold text-dark">
+        ¡Gracias por reconocer a {firstName}! 🎉
+      </p>
+      <p className="mt-1 text-sm text-muted">Tenés un beneficio esperándote.</p>
+
+      <div className="mt-5 rounded-2xl bg-pink p-6 text-pink-foreground shadow-sm">
+        <p className="text-5xl font-bold">{reward.valueLabel}</p>
+        <p className="mt-1 text-base font-semibold">{reward.title}</p>
+        <p className="mt-3 text-xs opacity-90">Válido hasta el {expDate}</p>
+      </div>
+
+      <p className="mt-5 text-sm text-muted">
+        Mostralo en tu próxima visita para usarlo. ¡Te esperamos! 💗
+      </p>
+    </div>
+  );
 }
 
 function ThankYou({ firstName }: { firstName: string }) {
@@ -185,14 +229,14 @@ function GuestCapture({
   recognitionEventId: string;
   restaurantId: string;
   staffId: string;
-  onDone: () => void;
+  onDone: (reward?: EmittedReward) => void;
 }) {
   const action = captureGuest.bind(null, recognitionEventId, restaurantId, staffId);
   const [state, formAction, pending] = useActionState(action, initialCapture);
 
   useEffect(() => {
-    if (state.done) onDone();
-  }, [state.done, onDone]);
+    if (state.done) onDone(state.reward);
+  }, [state.done, state.reward, onDone]);
 
   return (
     <div className="mt-8 w-full rounded-2xl border border-border bg-card p-6">

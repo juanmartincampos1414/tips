@@ -203,6 +203,133 @@ export async function getGuests(restaurantId: string): Promise<GuestWithStaff[]>
   return (data as GuestWithStaff[] | null) ?? [];
 }
 
+type RewardTemplate = Database["public"]["Tables"]["reward_templates"]["Row"];
+type Reward = Database["public"]["Tables"]["rewards"]["Row"];
+export type RewardWithGuest = Reward & { guests: { name: string | null } | null };
+
+/** FR-025 (lazy): flip overdue active rewards to expired before reading them. */
+export async function expireDueRewards(restaurantId: string) {
+  const supabase = createAdminClient();
+  await supabase
+    .from("rewards")
+    .update({ status: "expired" })
+    .eq("restaurant_id", restaurantId)
+    .eq("status", "active")
+    .lt("expiration_date", new Date().toISOString());
+}
+
+export async function getRewardTemplates(
+  restaurantId: string,
+): Promise<RewardTemplate[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("reward_templates")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+
+export async function getRewards(
+  restaurantId: string,
+): Promise<RewardWithGuest[]> {
+  await expireDueRewards(restaurantId);
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("rewards")
+    .select("*, guests(name)")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+  return (data as RewardWithGuest[] | null) ?? [];
+}
+
+export type DashboardKpis = {
+  guestsCaptured: number;
+  returningGuests: number;
+  returnVisitRate: number | null;
+  recognitionEvents: number;
+  reviewsGenerated: number;
+  activeRewards: number;
+  claimedRewards: number;
+  activeStaff: number;
+  guestCaptureRate: number | null;
+  rewardClaimRate: number | null;
+};
+
+/** FR-023 — the full Sprint 04 dashboard KPI set, computed live. */
+export async function getDashboardKpis(
+  restaurantId: string,
+): Promise<DashboardKpis> {
+  await expireDueRewards(restaurantId);
+  const supabase = createAdminClient();
+  const head = { count: "exact" as const, head: true };
+
+  const [
+    guests,
+    events,
+    reviews,
+    active,
+    claimed,
+    totalRewards,
+    staff,
+    { data: returns },
+  ] = await Promise.all([
+    supabase.from("guests").select("id", head).eq("restaurant_id", restaurantId),
+    supabase
+      .from("recognition_events")
+      .select("id", head)
+      .eq("restaurant_id", restaurantId),
+    supabase
+      .from("review_requests")
+      .select("id", head)
+      .eq("restaurant_id", restaurantId)
+      .eq("route", "public_review")
+      .eq("status", "completed"),
+    supabase
+      .from("rewards")
+      .select("id", head)
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "active"),
+    supabase
+      .from("rewards")
+      .select("id", head)
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "claimed"),
+    supabase.from("rewards").select("id", head).eq("restaurant_id", restaurantId),
+    supabase
+      .from("staff")
+      .select("id", head)
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "active"),
+    supabase
+      .from("return_visits")
+      .select("guest_id")
+      .eq("restaurant_id", restaurantId),
+  ]);
+
+  const guestsCaptured = guests.count ?? 0;
+  const recognitionEvents = events.count ?? 0;
+  const claimedRewards = claimed.count ?? 0;
+  const issued = totalRewards.count ?? 0;
+  const returningGuests = new Set(
+    (returns ?? []).map((r) => r.guest_id),
+  ).size;
+
+  return {
+    guestsCaptured,
+    returningGuests,
+    returnVisitRate: guestsCaptured > 0 ? returningGuests / guestsCaptured : null,
+    recognitionEvents,
+    reviewsGenerated: reviews.count ?? 0,
+    activeRewards: active.count ?? 0,
+    claimedRewards,
+    activeStaff: staff.count ?? 0,
+    guestCaptureRate:
+      recognitionEvents > 0 ? guestsCaptured / recognitionEvents : null,
+    rewardClaimRate: issued > 0 ? claimedRewards / issued : null,
+  };
+}
+
 export type DashboardStats = {
   totalStaff: number;
   totalVisits: number;

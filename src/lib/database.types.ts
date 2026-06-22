@@ -15,6 +15,19 @@ export type RecognitionSource = "nfc" | "qr" | "manual";
 export type ReviewRoute = "public_review" | "private_feedback";
 export type ReviewStatus = "pending" | "completed" | "ignored";
 export type GuestSource = "recognition" | "manual" | "import";
+export type RewardType =
+  | "cashback_percentage"
+  | "cashback_fixed"
+  | "free_item"
+  | "special_benefit";
+export type RewardSource =
+  | "recognition"
+  | "review"
+  | "first_visit"
+  | "vip"
+  | "manual";
+export type RewardStatus = "active" | "claimed" | "expired";
+export type TemplateStatus = "active" | "inactive";
 
 export type Json =
   | string
@@ -241,6 +254,98 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["guests"]["Insert"]>;
+        Relationships: [];
+      };
+      reward_templates: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          title: string;
+          reward_type: RewardType;
+          value: number;
+          expiration_days: number;
+          status: TemplateStatus;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          title: string;
+          reward_type: RewardType;
+          value?: number;
+          expiration_days?: number;
+          status?: TemplateStatus;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["reward_templates"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      rewards: {
+        Row: {
+          id: string;
+          guest_id: string;
+          restaurant_id: string;
+          template_id: string | null;
+          title: string;
+          reward_type: RewardType;
+          value: number;
+          source: RewardSource;
+          status: RewardStatus;
+          expiration_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          guest_id: string;
+          restaurant_id: string;
+          template_id?: string | null;
+          title: string;
+          reward_type: RewardType;
+          value?: number;
+          source?: RewardSource;
+          status?: RewardStatus;
+          expiration_date: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rewards"]["Insert"]>;
+        Relationships: [];
+      };
+      reward_claims: {
+        Row: {
+          id: string;
+          reward_id: string;
+          guest_id: string;
+          restaurant_id: string;
+          claimed_at: string;
+        };
+        Insert: {
+          id?: string;
+          reward_id: string;
+          guest_id: string;
+          restaurant_id: string;
+          claimed_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["reward_claims"]["Insert"]>;
+        Relationships: [];
+      };
+      return_visits: {
+        Row: {
+          id: string;
+          guest_id: string;
+          reward_id: string | null;
+          restaurant_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          guest_id: string;
+          reward_id?: string | null;
+          restaurant_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["return_visits"]["Insert"]>;
         Relationships: [];
       };
     };
