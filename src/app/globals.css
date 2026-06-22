@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/*
+  Tips Design System
+  Reference: TIPS Master PRD V2.0 — Parte V (Brand & Design System)
+  Human first · Mobile first · Frictionless · Hospitality native
+*/
+
+:root {
+  /* Brand */
+  --tips-pink: #ec3f7a; /* Primary — reconocimiento, energía, interacción humana */
+  --tips-dark: #0f172a; /* Secondary — confianza, estabilidad, tecnología */
+  --tips-background: #fdf8fa; /* Background — simplicidad, limpieza, claridad */
+  --tips-success: #22c55e; /* Success — reward, confirmación, retorno */
+  --tips-warning: #f59e0b; /* Warning — expiración, atención */
+
+  /* Semantic */
+  --background: var(--tips-background);
+  --foreground: var(--tips-dark);
+  --muted: #64748b;
+  --border: #f1e4ea;
+  --card: #ffffff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-card: var(--card);
+
+  --color-pink: var(--tips-pink);
+  --color-pink-foreground: #ffffff;
+  --color-dark: var(--tips-dark);
+  --color-success: var(--tips-success);
+  --color-warning: var(--tips-warning);
+
+  --font-sans: var(--font-inter);
+
+  --radius-tips: 1rem;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
