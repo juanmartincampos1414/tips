@@ -18,6 +18,16 @@ function isPublicPath(pathname: string) {
  * in sync, and gates the Tips Manager behind a logged-in user.
  */
 export async function updateSession(request: NextRequest) {
+  // Skip prefetch requests: Next.js fires these in the background for every
+  // <Link> in view. They don't need session refresh or gating — the real
+  // navigation that follows handles both.
+  if (
+    request.headers.get("next-router-prefetch") ||
+    request.headers.get("next-router-segment-prefetch")
+  ) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient<Database>(
@@ -48,18 +58,27 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // Build a redirect that preserves any auth cookies refreshed above.
+  // (A bare NextResponse.redirect would drop the refreshed Supabase session
+  // cookies set on supabaseResponse → session loss on the next request.)
+  const redirectTo = (to: string) => {
+    const url = request.nextUrl.clone();
+    url.pathname = to;
+    const res = NextResponse.redirect(url);
+    supabaseResponse.cookies
+      .getAll()
+      .forEach((cookie) => res.cookies.set(cookie));
+    return res;
+  };
+
   // Unauthenticated user hitting a protected route → send to login.
   if (!user && !isPublicPath(pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return redirectTo("/login");
   }
 
   // Logged-in user hitting the login page → send to the manager.
   if (user && pathname.startsWith("/login")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+    return redirectTo("/dashboard");
   }
 
   return supabaseResponse;
