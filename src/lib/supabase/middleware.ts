@@ -9,7 +9,8 @@ function isPublicPath(pathname: string) {
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/t/") || // public guest NFC flow (later sprint)
-    pathname.startsWith("/auth")
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/api/health") // TEMP diagnostic
   );
 }
 
