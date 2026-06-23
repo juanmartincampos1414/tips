@@ -205,60 +205,6 @@ export async function archiveStaff(formData: FormData): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// FR-003 · NFC assignment (R1 one tag→one staff · R2 one active tag per staff)
-// ---------------------------------------------------------------------------
-export async function assignNfc(
-  staffId: string,
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const member = await requireManager();
-  const code = str(formData, "nfc_code");
-  if (!code) return { fieldErrors: { nfc_code: "El código NFC es obligatorio." } };
-
-  const supabase = createAdminClient();
-
-  // R1 · the code can't already belong to another (active) tag.
-  const { data: existing } = await supabase
-    .from("nfc_tags")
-    .select("id, staff_id, status")
-    .eq("nfc_code", code)
-    .eq("status", "active")
-    .maybeSingle();
-  if (existing && existing.staff_id !== staffId)
-    return { fieldErrors: { nfc_code: "Ese código ya está asignado a otro miembro." } };
-
-  // R2 · deactivate any current active band for this staff before activating.
-  await supabase
-    .from("nfc_tags")
-    .update({ status: "inactive" })
-    .eq("staff_id", staffId)
-    .eq("status", "active");
-
-  const { error } = await supabase
-    .from("nfc_tags")
-    .insert({ staff_id: staffId, nfc_code: code, status: "active" });
-
-  if (error) {
-    if (error.code === "23505")
-      return { fieldErrors: { nfc_code: "Ese código ya está en uso." } };
-    return { error: error.message };
-  }
-
-  await logAudit({
-    restaurantId: member.restaurantId,
-    userId: member.userId,
-    action: "nfc.assigned",
-    entityType: "staff",
-    entityId: staffId,
-    metadata: { nfc_code: code },
-  });
-
-  revalidatePath("/staff");
-  redirect("/staff");
-}
-
-// ---------------------------------------------------------------------------
 // Sprint 04A · Reward templates (FR-018)
 // ---------------------------------------------------------------------------
 export async function createRewardTemplate(
@@ -456,4 +402,159 @@ export async function updateSettings(
 
   revalidatePath("/configuracion");
   return { };
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 05B · NFC Operations (inventory + lifecycle + history)
+// ---------------------------------------------------------------------------
+async function logNfcEvent(
+  nfcId: string,
+  restaurantId: string,
+  staffId: string | null,
+  event: "created" | "assigned" | "replaced" | "unassigned" | "lost" | "damaged" | "archived",
+  userId: string,
+) {
+  const supabase = createAdminClient();
+  await supabase.from("nfc_events").insert({
+    nfc_id: nfcId,
+    restaurant_id: restaurantId,
+    staff_id: staffId,
+    event,
+    created_by: userId,
+  });
+}
+
+export async function createNfc(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const member = await requireManager();
+  const serial = str(formData, "serial_number");
+  const uid = str(formData, "uid");
+
+  const fieldErrors: Record<string, string> = {};
+  if (!serial) fieldErrors.serial_number = "Serial obligatorio.";
+  if (!uid) fieldErrors.uid = "UID obligatorio.";
+  if (Object.keys(fieldErrors).length) return { fieldErrors };
+
+  const supabase = createAdminClient();
+  const { data: band, error } = await supabase
+    .from("nfc_inventory")
+    .insert({ restaurant_id: member.restaurantId, serial_number: serial, uid, status: "stock" })
+    .select("id")
+    .single();
+  if (error) {
+    if (error.code === "23505")
+      return { fieldErrors: { uid: "Ese UID ya existe en el inventario." } };
+    return { error: error.message };
+  }
+
+  await logNfcEvent(band.id, member.restaurantId, null, "created", member.userId);
+  await logAudit({
+    restaurantId: member.restaurantId,
+    userId: member.userId,
+    action: "nfc.created",
+    entityType: "nfc_inventory",
+    entityId: band.id,
+    metadata: { serial_number: serial, uid },
+  });
+
+  revalidatePath("/nfc");
+  redirect("/nfc");
+}
+
+export async function assignNfcBand(formData: FormData): Promise<void> {
+  const member = await requireManager();
+  const nfcId = str(formData, "nfc_id");
+  const staffId = str(formData, "staff_id");
+  if (!nfcId || !staffId) return;
+
+  const supabase = createAdminClient();
+  const { data: band } = await supabase
+    .from("nfc_inventory")
+    .select("id, status, restaurant_id")
+    .eq("id", nfcId)
+    .maybeSingle();
+  if (!band || band.status !== "stock") return;
+
+  // Replace: free the staff's current assigned band (back to stock).
+  const { data: current } = await supabase
+    .from("nfc_inventory")
+    .select("id")
+    .eq("assigned_staff_id", staffId)
+    .eq("status", "assigned")
+    .maybeSingle();
+  if (current) {
+    await supabase
+      .from("nfc_inventory")
+      .update({ status: "stock", assigned_staff_id: null, assigned_at: null })
+      .eq("id", current.id);
+    await logNfcEvent(current.id, band.restaurant_id, staffId, "replaced", member.userId);
+    await logAudit({
+      restaurantId: band.restaurant_id,
+      userId: member.userId,
+      action: "nfc.replaced",
+      entityType: "nfc_inventory",
+      entityId: current.id,
+      metadata: { staff_id: staffId },
+    });
+  }
+
+  await supabase
+    .from("nfc_inventory")
+    .update({
+      status: "assigned",
+      assigned_staff_id: staffId,
+      assigned_at: new Date().toISOString(),
+    })
+    .eq("id", nfcId);
+  await logNfcEvent(nfcId, band.restaurant_id, staffId, "assigned", member.userId);
+  await logAudit({
+    restaurantId: band.restaurant_id,
+    userId: member.userId,
+    action: "nfc.assigned",
+    entityType: "nfc_inventory",
+    entityId: nfcId,
+    metadata: { staff_id: staffId },
+  });
+
+  revalidatePath("/nfc");
+  revalidatePath("/staff");
+}
+
+export async function markNfcStatus(formData: FormData): Promise<void> {
+  const member = await requireManager();
+  const nfcId = str(formData, "nfc_id");
+  const status = str(formData, "status");
+  if (!nfcId || !["lost", "damaged", "archived"].includes(status)) return;
+
+  const supabase = createAdminClient();
+  const { data: band } = await supabase
+    .from("nfc_inventory")
+    .select("id, restaurant_id, assigned_staff_id")
+    .eq("id", nfcId)
+    .maybeSingle();
+  if (!band) return;
+
+  await supabase
+    .from("nfc_inventory")
+    .update({ status: status as "lost" | "damaged" | "archived" })
+    .eq("id", nfcId);
+  await logNfcEvent(
+    nfcId,
+    band.restaurant_id,
+    band.assigned_staff_id,
+    status as "lost" | "damaged" | "archived",
+    member.userId,
+  );
+  await logAudit({
+    restaurantId: band.restaurant_id,
+    userId: member.userId,
+    action: `nfc.${status}`,
+    entityType: "nfc_inventory",
+    entityId: nfcId,
+  });
+
+  revalidatePath("/nfc");
+  revalidatePath("/staff");
 }

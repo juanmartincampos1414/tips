@@ -12,6 +12,7 @@ const NAV = [
   { href: "/staff", label: "Camareros", ownerOnly: false },
   { href: "/clientes", label: "Clientes", ownerOnly: false },
   { href: "/recompensas", label: "Recompensas", ownerOnly: false },
+  { href: "/nfc", label: "NFC", ownerOnly: false },
   { href: "/equipo", label: "Equipo", ownerOnly: true },
   { href: "/configuracion", label: "Configuración", ownerOnly: true },
 ];

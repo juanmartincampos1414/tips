@@ -31,6 +31,20 @@ export type TemplateStatus = "active" | "inactive";
 export type WalletProvider = "web" | "apple" | "google";
 export type WalletPassStatus = "created" | "active" | "redeemed" | "expired";
 export type Role = "owner" | "manager" | "staff";
+export type NfcInventoryStatus =
+  | "stock"
+  | "assigned"
+  | "lost"
+  | "damaged"
+  | "archived";
+export type NfcEventType =
+  | "created"
+  | "assigned"
+  | "replaced"
+  | "unassigned"
+  | "lost"
+  | "damaged"
+  | "archived";
 
 export type Json =
   | string
@@ -445,6 +459,56 @@ export interface Database {
         Update: Partial<
           Database["public"]["Tables"]["restaurant_settings"]["Insert"]
         >;
+        Relationships: [];
+      };
+      nfc_inventory: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          serial_number: string;
+          uid: string;
+          status: NfcInventoryStatus;
+          assigned_staff_id: string | null;
+          assigned_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          serial_number: string;
+          uid: string;
+          status?: NfcInventoryStatus;
+          assigned_staff_id?: string | null;
+          assigned_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["nfc_inventory"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      nfc_events: {
+        Row: {
+          id: string;
+          nfc_id: string;
+          restaurant_id: string;
+          staff_id: string | null;
+          event: NfcEventType;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          nfc_id: string;
+          restaurant_id: string;
+          staff_id?: string | null;
+          event: NfcEventType;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["nfc_events"]["Insert"]>;
         Relationships: [];
       };
     };

@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import {
   getCurrentRestaurant,
   getStaffMetrics,
-  getStaffWithNfc,
+  getStaffWithBand,
 } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +16,7 @@ const money = (n: number) => "$" + n.toLocaleString("es-AR");
 
 export default async function StaffPage() {
   const restaurant = (await getCurrentRestaurant())!;
-  const staff = await getStaffWithNfc(restaurant.id);
+  const staff = await getStaffWithBand(restaurant.id);
   const metrics = await getStaffMetrics(staff.map((s) => s.id));
 
   return (
@@ -60,9 +60,7 @@ export default async function StaffPage() {
             </thead>
             <tbody>
               {staff.map((member) => {
-                const activeTag = member.nfc_tags.find(
-                  (t) => t.status === "active",
-                );
+                const band = member.band;
                 return (
                   <tr
                     key={member.id}
@@ -95,10 +93,10 @@ export default async function StaffPage() {
                       {metrics[member.id]?.recognitionEvents ?? 0}
                     </td>
                     <td className="px-5 py-3">
-                      {activeTag ? (
+                      {band ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
                           <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                          {activeTag.nfc_code}
+                          {band.uid}
                         </span>
                       ) : (
                         <span className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning">
@@ -108,9 +106,9 @@ export default async function StaffPage() {
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-2">
-                        {activeTag ? (
+                        {band ? (
                           <a
-                            href={`/t/${restaurant.slug}/${encodeURIComponent(activeTag.nfc_code)}`}
+                            href={`/t/${restaurant.slug}/${encodeURIComponent(band.uid)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="rounded-full px-3 py-1.5 text-xs font-semibold text-muted hover:bg-background hover:text-dark"
@@ -119,10 +117,10 @@ export default async function StaffPage() {
                           </a>
                         ) : null}
                         <Link
-                          href={`/staff/${member.id}/nfc`}
+                          href={`/staff/${member.id}`}
                           className="rounded-full px-3 py-1.5 text-xs font-semibold text-pink hover:bg-pink/5"
                         >
-                          {activeTag ? "Reasignar NFC" : "Asignar NFC"}
+                          Ver perfil
                         </Link>
                         <form action={archiveStaff}>
                           <input type="hidden" name="id" value={member.id} />

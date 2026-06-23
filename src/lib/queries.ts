@@ -10,6 +10,126 @@ type NfcTag = Database["public"]["Tables"]["nfc_tags"]["Row"];
 
 export type StaffWithNfc = Staff & { nfc_tags: NfcTag[] };
 
+type NfcInventory = Database["public"]["Tables"]["nfc_inventory"]["Row"];
+export type NfcWithStaff = NfcInventory & { staff: { name: string } | null };
+export type StaffWithBand = Staff & {
+  band: { uid: string; serial_number: string } | null;
+};
+
+const NFC_STATUSES = [
+  "stock",
+  "assigned",
+  "lost",
+  "damaged",
+  "archived",
+] as const;
+
+export async function getNfcInventory(
+  restaurantId: string,
+  status?: string,
+): Promise<NfcWithStaff[]> {
+  const supabase = createAdminClient();
+  let query = supabase
+    .from("nfc_inventory")
+    .select("*, staff:assigned_staff_id(name)")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+  if (status && (NFC_STATUSES as readonly string[]).includes(status)) {
+    query = query.eq("status", status as NfcInventory["status"]);
+  }
+  const { data } = await query;
+  return (data as NfcWithStaff[] | null) ?? [];
+}
+
+export type NfcKpis = {
+  total: number;
+  assigned: number;
+  stock: number;
+  lost: number;
+  damaged: number;
+};
+
+export async function getNfcKpis(restaurantId: string): Promise<NfcKpis> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("nfc_inventory")
+    .select("status")
+    .eq("restaurant_id", restaurantId);
+  const rows = data ?? [];
+  const count = (s: string) => rows.filter((r) => r.status === s).length;
+  return {
+    total: rows.length,
+    assigned: count("assigned"),
+    stock: count("stock"),
+    lost: count("lost"),
+    damaged: count("damaged"),
+  };
+}
+
+/** Staff list with their current assigned band (if any). */
+export async function getStaffWithBand(
+  restaurantId: string,
+): Promise<StaffWithBand[]> {
+  const supabase = createAdminClient();
+  const { data: staff } = await supabase
+    .from("staff")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .neq("status", "archived")
+    .order("created_at", { ascending: false });
+  if (!staff?.length) return [];
+
+  const { data: bands } = await supabase
+    .from("nfc_inventory")
+    .select("uid, serial_number, assigned_staff_id")
+    .eq("restaurant_id", restaurantId)
+    .eq("status", "assigned");
+
+  const byStaff = new Map(
+    (bands ?? []).map((b) => [b.assigned_staff_id, b]),
+  );
+  return staff.map((s) => {
+    const b = byStaff.get(s.id);
+    return {
+      ...s,
+      band: b ? { uid: b.uid, serial_number: b.serial_number } : null,
+    };
+  });
+}
+
+export async function getStaffBand(
+  staffId: string,
+): Promise<NfcInventory | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("nfc_inventory")
+    .select("*")
+    .eq("assigned_staff_id", staffId)
+    .eq("status", "assigned")
+    .maybeSingle();
+  return data ?? null;
+}
+
+export type NfcEventRow = {
+  id: string;
+  event: Database["public"]["Tables"]["nfc_events"]["Row"]["event"];
+  created_at: string;
+  nfc_inventory: { uid: string; serial_number: string } | null;
+};
+
+/** Full NFC history for a staff member (every band ever involving them). */
+export async function getStaffNfcHistory(
+  staffId: string,
+): Promise<NfcEventRow[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("nfc_events")
+    .select("id, event, created_at, nfc_inventory(uid, serial_number)")
+    .eq("staff_id", staffId)
+    .order("created_at", { ascending: false });
+  return (data as NfcEventRow[] | null) ?? [];
+}
+
 /**
  * Public guest flow: resolve the staff member behind an NFC tap.
  * URL is /t/:slug/:code where :slug is the restaurant slug and :code is the
@@ -29,18 +149,20 @@ export async function resolvePublicStaff(
     .maybeSingle();
   if (!restaurant) return null;
 
-  const { data: tag } = await supabase
-    .from("nfc_tags")
-    .select("staff_id")
-    .eq("nfc_code", code)
-    .eq("status", "active")
+  // Resolve the band by its uid in the inventory (must be assigned).
+  const { data: band } = await supabase
+    .from("nfc_inventory")
+    .select("assigned_staff_id")
+    .eq("restaurant_id", restaurant.id)
+    .eq("uid", code)
+    .eq("status", "assigned")
     .maybeSingle();
-  if (!tag) return null;
+  if (!band?.assigned_staff_id) return null;
 
   const { data: staff } = await supabase
     .from("staff")
     .select("*")
-    .eq("id", tag.staff_id)
+    .eq("id", band.assigned_staff_id)
     .eq("restaurant_id", restaurant.id)
     .eq("status", "active")
     .maybeSingle();
