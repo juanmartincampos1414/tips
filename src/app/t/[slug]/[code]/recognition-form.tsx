@@ -16,11 +16,13 @@ export function RecognitionForm({
   restaurantId,
   firstName,
   restaurantName,
+  googleReviewUrl,
 }: {
   staffId: string;
   restaurantId: string;
   firstName: string;
   restaurantName: string;
+  googleReviewUrl: string | null;
 }) {
   const action = createRecognition.bind(null, staffId, restaurantId);
   const [state, formAction, pending] = useActionState(action, initial);
@@ -44,6 +46,7 @@ export function RecognitionForm({
         staffId={staffId}
         firstName={firstName}
         restaurantName={restaurantName}
+        googleReviewUrl={googleReviewUrl}
       />
     );
   }

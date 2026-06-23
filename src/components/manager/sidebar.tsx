@@ -4,27 +4,40 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { signOut } from "@/app/login/actions";
+import type { Role } from "@/lib/database.types";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/staff", label: "Camareros" },
-  { href: "/clientes", label: "Clientes" },
-  { href: "/recompensas", label: "Recompensas" },
+  { href: "/dashboard", label: "Dashboard", ownerOnly: false },
+  { href: "/staff", label: "Camareros", ownerOnly: false },
+  { href: "/clientes", label: "Clientes", ownerOnly: false },
+  { href: "/recompensas", label: "Recompensas", ownerOnly: false },
+  { href: "/equipo", label: "Equipo", ownerOnly: true },
+  { href: "/configuracion", label: "Configuración", ownerOnly: true },
 ];
 
-export function Sidebar({ restaurantName }: { restaurantName: string }) {
+export function Sidebar({
+  restaurantName,
+  role,
+}: {
+  restaurantName: string;
+  role: Role;
+}) {
   const pathname = usePathname();
+  const nav = NAV.filter((item) => !item.ownerOnly || role === "owner");
 
   return (
     <aside className="flex w-full shrink-0 flex-col gap-6 border-border bg-card px-4 py-6 md:w-60 md:border-r">
       <div className="px-2">
         <p className="text-lg font-bold text-pink">Tips</p>
         <p className="mt-0.5 truncate text-xs text-muted">{restaurantName}</p>
+        <p className="mt-1 inline-block rounded-full bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+          {role}
+        </p>
       </div>
 
       <nav className="flex gap-1 md:flex-col">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (

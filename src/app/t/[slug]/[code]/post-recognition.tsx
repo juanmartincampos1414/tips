@@ -25,6 +25,7 @@ export function PostRecognition(props: {
   staffId: string;
   firstName: string;
   restaurantName: string;
+  googleReviewUrl: string | null;
 }) {
   const [phase, setPhase] = useState<Phase>("review");
   const [reward, setReward] = useState<EmittedReward | null>(null);
@@ -35,6 +36,7 @@ export function PostRecognition(props: {
         route={props.route}
         reviewRequestId={props.reviewRequestId}
         restaurantName={props.restaurantName}
+        googleReviewUrl={props.googleReviewUrl}
         onDone={() => setPhase("capture")}
       />
     );
@@ -160,11 +162,13 @@ function ReviewStep({
   route,
   reviewRequestId,
   restaurantName,
+  googleReviewUrl,
   onDone,
 }: {
   route: ReviewRoute;
   reviewRequestId: string;
   restaurantName: string;
+  googleReviewUrl: string | null;
   onDone: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -186,8 +190,9 @@ function ReviewStep({
   if (route === "public_review") {
     const reviewOnGoogle = () => {
       const url =
+        googleReviewUrl ||
         "https://www.google.com/search?q=" +
-        encodeURIComponent(`${restaurantName} reseñas`);
+          encodeURIComponent(`${restaurantName} reseñas`);
       window.open(url, "_blank", "noopener,noreferrer");
       startTransition(async () => {
         await completeReview(reviewRequestId);

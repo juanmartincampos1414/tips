@@ -9,7 +9,8 @@ function isPublicPath(pathname: string) {
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/t/") || // public guest NFC flow
-    pathname.startsWith("/w/") || // public wallet pass + claim validation
+    // public wallet pass view, but /w/.../v (claim validation) requires auth
+    (pathname.startsWith("/w/") && !pathname.endsWith("/v")) ||
     pathname.startsWith("/api/wallet/") || // wallet provider endpoints
     pathname.startsWith("/auth")
   );

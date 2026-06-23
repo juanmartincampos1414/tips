@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
 
-import { recordVisit, resolvePublicStaff } from "@/lib/queries";
+import { getSettings, recordVisit, resolvePublicStaff } from "@/lib/queries";
 
 import { RecognitionForm } from "./recognition-form";
 
@@ -22,6 +22,8 @@ export default async function PublicStaffProfile({
 
   // FR-005 / AC-006: opening a profile registers a Visit.
   await recordVisit(restaurant.id, staff.id);
+
+  const settings = await getSettings(restaurant.id);
 
   const initials = staff.name
     .split(" ")
@@ -60,6 +62,7 @@ export default async function PublicStaffProfile({
         restaurantId={restaurant.id}
         firstName={staff.name.split(" ")[0]}
         restaurantName={restaurant.name}
+        googleReviewUrl={settings?.google_review_url ?? null}
       />
 
       <p className="mt-8 text-xs font-medium text-muted">Tips</p>

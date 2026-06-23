@@ -30,6 +30,7 @@ export type RewardStatus = "active" | "claimed" | "expired";
 export type TemplateStatus = "active" | "inactive";
 export type WalletProvider = "web" | "apple" | "google";
 export type WalletPassStatus = "created" | "active" | "redeemed" | "expired";
+export type Role = "owner" | "manager" | "staff";
 
 export type Json =
   | string
@@ -376,6 +377,74 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["wallet_passes"]["Insert"]>;
+        Relationships: [];
+      };
+      restaurant_members: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          user_id: string;
+          role: Role;
+          staff_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          user_id: string;
+          role: Role;
+          staff_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["restaurant_members"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      audit_logs: {
+        Row: {
+          id: string;
+          restaurant_id: string | null;
+          user_id: string | null;
+          action: string;
+          entity_type: string | null;
+          entity_id: string | null;
+          metadata: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id?: string | null;
+          user_id?: string | null;
+          action: string;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          metadata?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["audit_logs"]["Insert"]>;
+        Relationships: [];
+      };
+      restaurant_settings: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          google_place_id: string | null;
+          google_review_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          google_place_id?: string | null;
+          google_review_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["restaurant_settings"]["Insert"]
+        >;
         Relationships: [];
       };
     };

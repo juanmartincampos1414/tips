@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getMembershipForRestaurant, logAudit } from "@/lib/auth";
 
 /**
  * Claim validation (FR-021/022). Staff opens this via the pass QR and confirms.
  * Marks the reward claimed + the pass redeemed, and records a Return Visit.
+ * Sprint 05A: requires an authenticated member of the restaurant (any role).
  * R7: a claimed/expired reward cannot be reused.
  */
 export async function claimByPass(passIdentifier: string) {
@@ -18,6 +20,10 @@ export async function claimByPass(passIdentifier: string) {
     .eq("pass_identifier", passIdentifier)
     .maybeSingle();
   if (!wp) return;
+
+  // Auth + role: only members of this restaurant can validate a claim.
+  const membership = await getMembershipForRestaurant(wp.restaurant_id);
+  if (!membership) return;
 
   const { data: reward } = await supabase
     .from("rewards")
@@ -48,6 +54,15 @@ export async function claimByPass(passIdentifier: string) {
     guest_id: wp.guest_id,
     reward_id: wp.reward_id,
     restaurant_id: wp.restaurant_id,
+  });
+
+  await logAudit({
+    restaurantId: wp.restaurant_id,
+    userId: membership.userId,
+    action: "reward.claimed",
+    entityType: "reward",
+    entityId: wp.reward_id,
+    metadata: { via: "qr", pass: passIdentifier, role: membership.role },
   });
 
   revalidatePath(`/w/${passIdentifier}/v`);

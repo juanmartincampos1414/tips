@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { getMembershipForRestaurant } from "@/lib/auth";
 import { getWalletPass } from "@/lib/queries";
 import { effectiveRewardStatus, rewardValueLabel } from "@/lib/rewards";
 
@@ -27,6 +28,8 @@ export default async function ClaimValidationPage({
   const { rewards: reward, guests: guest, restaurants: restaurant } = data;
   const status = effectiveRewardStatus(reward.status, reward.expiration_date);
 
+  // Sprint 05A: only an authenticated member of the restaurant may validate.
+  const membership = await getMembershipForRestaurant(data.restaurant_id);
   const claim = claimByPass.bind(null, pass);
 
   return (
@@ -59,7 +62,14 @@ export default async function ClaimValidationPage({
         </div>
 
         <div className="mt-6">
-          {status === "active" ? (
+          {!membership ? (
+            <a
+              href="/login"
+              className="block rounded-xl bg-dark/5 px-4 py-3 text-center text-sm font-medium text-dark"
+            >
+              Iniciá sesión como personal del restaurante para validar.
+            </a>
+          ) : status === "active" ? (
             <form action={claim}>
               <Button type="submit" className="h-12 w-full">
                 Reclamar beneficio

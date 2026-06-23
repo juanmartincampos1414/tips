@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { logAudit, requireManager, requireOwner } from "@/lib/auth";
 import { getCurrentRestaurant } from "@/lib/queries";
 import { slugify } from "@/lib/utils";
 
@@ -85,16 +86,37 @@ export async function createRestaurant(
     data: { user },
   } = await auth.auth.getUser();
 
-  const { error } = await supabase.from("restaurants").insert({
-    name,
-    slug,
-    email: email || null,
-    phone: phone || null,
-    logo_url: logoUrl,
-    owner_id: user?.id ?? null,
-  });
+  const { data: restaurant, error } = await supabase
+    .from("restaurants")
+    .insert({
+      name,
+      slug,
+      email: email || null,
+      phone: phone || null,
+      logo_url: logoUrl,
+      owner_id: user?.id ?? null,
+    })
+    .select("id")
+    .single();
 
-  if (error) return { error: error.message };
+  if (error || !restaurant) return { error: error?.message ?? "Error" };
+
+  // The creator becomes the owner member (source of truth for access).
+  if (user) {
+    await supabase.from("restaurant_members").insert({
+      restaurant_id: restaurant.id,
+      user_id: user.id,
+      role: "owner",
+    });
+    await logAudit({
+      restaurantId: restaurant.id,
+      userId: user.id,
+      action: "restaurant.created",
+      entityType: "restaurant",
+      entityId: restaurant.id,
+      metadata: { name },
+    });
+  }
 
   revalidatePath("/", "layout");
   redirect("/dashboard");
@@ -107,6 +129,7 @@ export async function createStaff(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const member = await requireManager();
   const restaurant = await getCurrentRestaurant();
   if (!restaurant) redirect("/setup");
 
@@ -129,16 +152,29 @@ export async function createStaff(
   }
 
   const supabase = createAdminClient();
-  const { error } = await supabase.from("staff").insert({
-    restaurant_id: restaurant.id,
-    name,
-    role: role || null,
-    email: email || null,
-    phone: phone || null,
-    photo_url: photoUrl,
-  });
+  const { data: created, error } = await supabase
+    .from("staff")
+    .insert({
+      restaurant_id: restaurant.id,
+      name,
+      role: role || null,
+      email: email || null,
+      phone: phone || null,
+      photo_url: photoUrl,
+    })
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+
+  await logAudit({
+    restaurantId: restaurant.id,
+    userId: member.userId,
+    action: "staff.created",
+    entityType: "staff",
+    entityId: created?.id ?? null,
+    metadata: { name, role: role || null },
+  });
 
   revalidatePath("/staff");
   revalidatePath("/dashboard");
@@ -149,11 +185,20 @@ export async function createStaff(
 // FR-002 · Archive staff (R10 — never hard-delete domain data)
 // ---------------------------------------------------------------------------
 export async function archiveStaff(formData: FormData): Promise<void> {
+  const member = await requireManager();
   const id = str(formData, "id");
   if (!id) return;
 
   const supabase = createAdminClient();
   await supabase.from("staff").update({ status: "archived" }).eq("id", id);
+
+  await logAudit({
+    restaurantId: member.restaurantId,
+    userId: member.userId,
+    action: "staff.archived",
+    entityType: "staff",
+    entityId: id,
+  });
 
   revalidatePath("/staff");
   revalidatePath("/dashboard");
@@ -167,6 +212,7 @@ export async function assignNfc(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const member = await requireManager();
   const code = str(formData, "nfc_code");
   if (!code) return { fieldErrors: { nfc_code: "El código NFC es obligatorio." } };
 
@@ -199,6 +245,15 @@ export async function assignNfc(
     return { error: error.message };
   }
 
+  await logAudit({
+    restaurantId: member.restaurantId,
+    userId: member.userId,
+    action: "nfc.assigned",
+    entityType: "staff",
+    entityId: staffId,
+    metadata: { nfc_code: code },
+  });
+
   revalidatePath("/staff");
   redirect("/staff");
 }
@@ -210,6 +265,7 @@ export async function createRewardTemplate(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const member = await requireManager();
   const restaurant = await getCurrentRestaurant();
   if (!restaurant) redirect("/setup");
 
@@ -232,18 +288,31 @@ export async function createRewardTemplate(
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
   const supabase = createAdminClient();
-  const { error } = await supabase.from("reward_templates").insert({
-    restaurant_id: restaurant.id,
-    title,
-    reward_type: rewardType as
-      | "cashback_percentage"
-      | "cashback_fixed"
-      | "free_item"
-      | "special_benefit",
-    value,
-    expiration_days: expirationDays,
-  });
+  const { data: tpl, error } = await supabase
+    .from("reward_templates")
+    .insert({
+      restaurant_id: restaurant.id,
+      title,
+      reward_type: rewardType as
+        | "cashback_percentage"
+        | "cashback_fixed"
+        | "free_item"
+        | "special_benefit",
+      value,
+      expiration_days: expirationDays,
+    })
+    .select("id")
+    .single();
   if (error) return { error: error.message };
+
+  await logAudit({
+    restaurantId: restaurant.id,
+    userId: member.userId,
+    action: "reward_template.created",
+    entityType: "reward_template",
+    entityId: tpl?.id ?? null,
+    metadata: { title, reward_type: rewardType, value },
+  });
 
   revalidatePath("/recompensas");
   redirect("/recompensas");
@@ -253,6 +322,7 @@ export async function createRewardTemplate(
 // Sprint 04A · Reward claim → Return Visit (FR-021/022)
 // ---------------------------------------------------------------------------
 export async function claimReward(formData: FormData): Promise<void> {
+  const member = await requireManager();
   const rewardId = str(formData, "reward_id");
   if (!rewardId) return;
 
@@ -281,6 +351,109 @@ export async function claimReward(formData: FormData): Promise<void> {
     restaurant_id: reward.restaurant_id,
   });
 
+  await logAudit({
+    restaurantId: reward.restaurant_id,
+    userId: member.userId,
+    action: "reward.claimed",
+    entityType: "reward",
+    entityId: reward.id,
+    metadata: { via: "manager" },
+  });
+
   revalidatePath("/recompensas");
   revalidatePath("/dashboard");
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 05A · Team management (owner-only) — create Manager/Staff accounts
+// ---------------------------------------------------------------------------
+export async function createMember(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const owner = await requireOwner();
+
+  const email = str(formData, "email").toLowerCase();
+  const password = str(formData, "password");
+  const role = str(formData, "role");
+  const staffId = str(formData, "staff_id");
+
+  const fieldErrors: Record<string, string> = {};
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    fieldErrors.email = "Email inválido.";
+  if (password.length < 8)
+    fieldErrors.password = "Mínimo 8 caracteres.";
+  if (!["manager", "staff"].includes(role))
+    fieldErrors.role = "Elegí un rol.";
+  if (Object.keys(fieldErrors).length) return { fieldErrors };
+
+  const supabase = createAdminClient();
+
+  const { data: created, error: userErr } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  if (userErr || !created.user) {
+    return { error: "No se pudo crear el usuario (¿email ya registrado?)." };
+  }
+
+  const { error: memErr } = await supabase.from("restaurant_members").insert({
+    restaurant_id: owner.restaurantId,
+    user_id: created.user.id,
+    role: role as "manager" | "staff",
+    staff_id: role === "staff" && staffId ? staffId : null,
+  });
+  if (memErr) return { error: memErr.message };
+
+  await logAudit({
+    restaurantId: owner.restaurantId,
+    userId: owner.userId,
+    action: "member.created",
+    entityType: "member",
+    entityId: created.user.id,
+    metadata: { email, role },
+  });
+
+  revalidatePath("/equipo");
+  redirect("/equipo");
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 05A · Restaurant settings (owner-only) — Google reviews config
+// ---------------------------------------------------------------------------
+export async function updateSettings(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const owner = await requireOwner();
+  const placeId = str(formData, "google_place_id");
+  const reviewUrl = str(formData, "google_review_url");
+
+  if (reviewUrl && !/^https?:\/\//.test(reviewUrl))
+    return { fieldErrors: { google_review_url: "Tiene que empezar con http(s)://" } };
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("restaurant_settings")
+    .upsert(
+      {
+        restaurant_id: owner.restaurantId,
+        google_place_id: placeId || null,
+        google_review_url: reviewUrl || null,
+      },
+      { onConflict: "restaurant_id" },
+    );
+  if (error) return { error: error.message };
+
+  await logAudit({
+    restaurantId: owner.restaurantId,
+    userId: owner.userId,
+    action: "settings.updated",
+    entityType: "restaurant_settings",
+    entityId: owner.restaurantId,
+  });
+
+  revalidatePath("/configuracion");
+  return { };
 }

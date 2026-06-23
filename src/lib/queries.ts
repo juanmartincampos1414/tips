@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentMembership } from "@/lib/auth";
 import type { Database } from "@/lib/database.types";
 
 type Restaurant = Database["public"]["Tables"]["restaurants"]["Row"];
@@ -59,17 +60,19 @@ export async function recordVisit(restaurantId: string, staffId: string) {
 }
 
 /**
- * Sprint 01 operates on a single restaurant — the first one created in Setup.
- * Returns null when no restaurant exists yet (→ redirect to /setup).
+ * The restaurant the logged-in user belongs to (via restaurant_members).
+ * Returns null when the user has no membership yet (→ Setup for a new owner).
  */
 export async function getCurrentRestaurant(): Promise<Restaurant | null> {
+  const membership = await getCurrentMembership();
+  if (!membership) return null;
+
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("restaurants")
     .select("*")
+    .eq("id", membership.restaurantId)
     .neq("status", "archived")
-    .order("created_at", { ascending: true })
-    .limit(1)
     .maybeSingle();
   return data ?? null;
 }
@@ -336,6 +339,7 @@ export async function getDashboardKpis(
 export type WalletPassFull = {
   id: string;
   pass_identifier: string;
+  restaurant_id: string;
   status: Database["public"]["Tables"]["wallet_passes"]["Row"]["status"];
   rewards: {
     id: string;
@@ -357,11 +361,77 @@ export async function getWalletPass(
   const { data } = await supabase
     .from("wallet_passes")
     .select(
-      "id, pass_identifier, status, rewards(id, title, reward_type, value, status, expiration_date), guests(name), restaurants(name, logo_url, slug)",
+      "id, pass_identifier, restaurant_id, status, rewards(id, title, reward_type, value, status, expiration_date), guests(name), restaurants(name, logo_url, slug)",
     )
     .eq("pass_identifier", passIdentifier)
     .maybeSingle();
   return (data as WalletPassFull | null) ?? null;
+}
+
+type Settings = Database["public"]["Tables"]["restaurant_settings"]["Row"];
+
+export async function getSettings(
+  restaurantId: string,
+): Promise<Settings | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("restaurant_settings")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  return data ?? null;
+}
+
+export type MemberRow = {
+  id: string;
+  role: Database["public"]["Tables"]["restaurant_members"]["Row"]["role"];
+  email: string | null;
+  staffName: string | null;
+  created_at: string;
+};
+
+/** Team members of a restaurant, with their login email + linked staff. */
+export async function getMembers(restaurantId: string): Promise<MemberRow[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("restaurant_members")
+    .select("id, role, user_id, created_at, staff:staff_id(name)")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: true });
+
+  const rows = (data ?? []) as Array<{
+    id: string;
+    role: MemberRow["role"];
+    user_id: string;
+    created_at: string;
+    staff: { name: string } | null;
+  }>;
+
+  return Promise.all(
+    rows.map(async (m) => {
+      const { data: u } = await supabase.auth.admin.getUserById(m.user_id);
+      return {
+        id: m.id,
+        role: m.role,
+        email: u.user?.email ?? null,
+        staffName: m.staff?.name ?? null,
+        created_at: m.created_at,
+      };
+    }),
+  );
+}
+
+export async function getStaffOptions(
+  restaurantId: string,
+): Promise<{ id: string; name: string }[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("staff")
+    .select("id, name")
+    .eq("restaurant_id", restaurantId)
+    .neq("status", "archived")
+    .order("name");
+  return data ?? [];
 }
 
 export type DashboardStats = {
