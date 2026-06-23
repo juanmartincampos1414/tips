@@ -45,6 +45,8 @@ export type NfcEventType =
   | "lost"
   | "damaged"
   | "archived";
+export type ImportStatus = "previewed" | "completed" | "failed";
+export type ImportRowAction = "create" | "update" | "skip" | "invalid";
 
 export type Json =
   | string
@@ -315,6 +317,88 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["guest_tags"]["Insert"]>;
+        Relationships: [];
+      };
+      guest_imports: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          filename: string | null;
+          source: string | null;
+          status: ImportStatus;
+          total_rows: number;
+          created_count: number;
+          updated_count: number;
+          skipped_count: number;
+          created_by: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          filename?: string | null;
+          source?: string | null;
+          status?: ImportStatus;
+          total_rows?: number;
+          created_count?: number;
+          updated_count?: number;
+          skipped_count?: number;
+          created_by?: string | null;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["guest_imports"]["Insert"]>;
+        Relationships: [];
+      };
+      guest_import_rows: {
+        Row: {
+          id: string;
+          import_id: string;
+          restaurant_id: string;
+          row_number: number;
+          raw: Json | null;
+          mapped: Json | null;
+          action: ImportRowAction;
+          matched_guest_id: string | null;
+          error: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          import_id: string;
+          restaurant_id: string;
+          row_number: number;
+          raw?: Json | null;
+          mapped?: Json | null;
+          action?: ImportRowAction;
+          matched_guest_id?: string | null;
+          error?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["guest_import_rows"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      import_logs: {
+        Row: {
+          id: string;
+          import_id: string;
+          restaurant_id: string;
+          level: "info" | "warn" | "error";
+          message: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          import_id: string;
+          restaurant_id: string;
+          level?: "info" | "warn" | "error";
+          message: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["import_logs"]["Insert"]>;
         Relationships: [];
       };
       reward_templates: {

@@ -822,6 +822,49 @@ export async function getGuestTimeline(
   return items.sort((a, b) => (a.at < b.at ? 1 : -1));
 }
 
+type GuestImport = Database["public"]["Tables"]["guest_imports"]["Row"];
+type GuestImportRow = Database["public"]["Tables"]["guest_import_rows"]["Row"];
+
+export async function getImports(
+  restaurantId: string,
+): Promise<GuestImport[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("guest_imports")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+
+export async function getImport(
+  importId: string,
+  restaurantId: string,
+): Promise<GuestImport | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("guest_imports")
+    .select("*")
+    .eq("id", importId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  return data ?? null;
+}
+
+export async function getImportRows(
+  importId: string,
+  limit = 100,
+): Promise<GuestImportRow[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("guest_import_rows")
+    .select("*")
+    .eq("import_id", importId)
+    .order("row_number")
+    .limit(limit);
+  return data ?? [];
+}
+
 export type DashboardStats = {
   totalStaff: number;
   totalVisits: number;
