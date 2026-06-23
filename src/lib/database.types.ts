@@ -28,6 +28,8 @@ export type RewardSource =
   | "manual";
 export type RewardStatus = "active" | "claimed" | "expired";
 export type TemplateStatus = "active" | "inactive";
+export type WalletProvider = "web" | "apple" | "google";
+export type WalletPassStatus = "created" | "active" | "redeemed" | "expired";
 
 export type Json =
   | string
@@ -346,6 +348,34 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["return_visits"]["Insert"]>;
+        Relationships: [];
+      };
+      wallet_passes: {
+        Row: {
+          id: string;
+          guest_id: string;
+          reward_id: string;
+          restaurant_id: string;
+          wallet_provider: WalletProvider;
+          wallet_pass_url: string | null;
+          pass_identifier: string;
+          qr_code: string | null;
+          status: WalletPassStatus;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          guest_id: string;
+          reward_id: string;
+          restaurant_id: string;
+          wallet_provider?: WalletProvider;
+          wallet_pass_url?: string | null;
+          pass_identifier: string;
+          qr_code?: string | null;
+          status?: WalletPassStatus;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["wallet_passes"]["Insert"]>;
         Relationships: [];
       };
     };

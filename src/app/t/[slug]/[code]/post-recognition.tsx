@@ -87,7 +87,30 @@ function RewardSuccess({
         <p className="mt-3 text-xs opacity-90">Válido hasta el {expDate}</p>
       </div>
 
-      <p className="mt-5 text-sm text-muted">
+      <a
+        href={`/w/${reward.passIdentifier}`}
+        className="mt-5 flex h-12 w-full items-center justify-center rounded-full bg-pink text-sm font-semibold text-pink-foreground transition-opacity hover:opacity-90"
+      >
+        Ver mi beneficio
+      </a>
+
+      <p className="mt-6 text-xs font-medium text-muted">Guardalo en tu Wallet</p>
+      <div className="mt-2 flex gap-2">
+        <a
+          href={`/api/wallet/apple/${reward.passIdentifier}`}
+          className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-dark text-xs font-semibold text-white"
+        >
+           Apple Wallet
+        </a>
+        <a
+          href={`/api/wallet/google/${reward.passIdentifier}`}
+          className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-border bg-card text-xs font-semibold text-dark"
+        >
+          Google Wallet
+        </a>
+      </div>
+
+      <p className="mt-4 text-xs text-muted">
         Mostralo en tu próxima visita para usarlo. ¡Te esperamos! 💗
       </p>
     </div>

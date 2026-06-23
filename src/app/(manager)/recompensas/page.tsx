@@ -125,20 +125,30 @@ export default async function RecompensasPage() {
                       <td className="px-4 py-3 text-muted">
                         {dateFmt(r.expiration_date)}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        {r.status === "active" ? (
-                          <form action={claimReward}>
-                            <input type="hidden" name="reward_id" value={r.id} />
-                            <SubmitButton
-                              pendingLabel="…"
-                              className="h-auto bg-pink/10 px-3 py-1.5 text-xs font-semibold text-pink hover:bg-pink/20"
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          {r.wallet_passes[0] ? (
+                            <a
+                              href={`/w/${r.wallet_passes[0].pass_identifier}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full px-3 py-1.5 text-xs font-semibold text-muted hover:bg-background hover:text-dark"
                             >
-                              Reclamar
-                            </SubmitButton>
-                          </form>
-                        ) : (
-                          <span className="text-xs text-muted">—</span>
-                        )}
+                              Ver pass ↗
+                            </a>
+                          ) : null}
+                          {r.status === "active" ? (
+                            <form action={claimReward}>
+                              <input type="hidden" name="reward_id" value={r.id} />
+                              <SubmitButton
+                                pendingLabel="…"
+                                className="h-auto bg-pink/10 px-3 py-1.5 text-xs font-semibold text-pink hover:bg-pink/20"
+                              >
+                                Reclamar
+                              </SubmitButton>
+                            </form>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

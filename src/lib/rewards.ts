@@ -1,4 +1,16 @@
-import type { RewardType } from "@/lib/database.types";
+import type { RewardStatus, RewardType } from "@/lib/database.types";
+
+/** Effective reward status, applying lazy expiration against the current time. */
+export function effectiveRewardStatus(
+  status: RewardStatus,
+  expirationIso: string,
+): RewardStatus {
+  if (status === "claimed") return "claimed";
+  if (status === "expired") return "expired";
+  return new Date(expirationIso).getTime() < new Date().getTime()
+    ? "expired"
+    : "active";
+}
 
 export const REWARD_TYPES: { value: RewardType; label: string }[] = [
   { value: "cashback_percentage", label: "Cashback %" },

@@ -205,7 +205,10 @@ export async function getGuests(restaurantId: string): Promise<GuestWithStaff[]>
 
 type RewardTemplate = Database["public"]["Tables"]["reward_templates"]["Row"];
 type Reward = Database["public"]["Tables"]["rewards"]["Row"];
-export type RewardWithGuest = Reward & { guests: { name: string | null } | null };
+export type RewardWithGuest = Reward & {
+  guests: { name: string | null } | null;
+  wallet_passes: { pass_identifier: string }[];
+};
 
 /** FR-025 (lazy): flip overdue active rewards to expired before reading them. */
 export async function expireDueRewards(restaurantId: string) {
@@ -237,7 +240,7 @@ export async function getRewards(
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("rewards")
-    .select("*, guests(name)")
+    .select("*, guests(name), wallet_passes(pass_identifier)")
     .eq("restaurant_id", restaurantId)
     .order("created_at", { ascending: false });
   return (data as RewardWithGuest[] | null) ?? [];
@@ -328,6 +331,37 @@ export async function getDashboardKpis(
       recognitionEvents > 0 ? guestsCaptured / recognitionEvents : null,
     rewardClaimRate: issued > 0 ? claimedRewards / issued : null,
   };
+}
+
+export type WalletPassFull = {
+  id: string;
+  pass_identifier: string;
+  status: Database["public"]["Tables"]["wallet_passes"]["Row"]["status"];
+  rewards: {
+    id: string;
+    title: string;
+    reward_type: Reward["reward_type"];
+    value: number;
+    status: Reward["status"];
+    expiration_date: string;
+  } | null;
+  guests: { name: string | null } | null;
+  restaurants: { name: string; logo_url: string | null; slug: string } | null;
+};
+
+/** Public wallet pass resolution (pass + reward + guest + restaurant). */
+export async function getWalletPass(
+  passIdentifier: string,
+): Promise<WalletPassFull | null> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("wallet_passes")
+    .select(
+      "id, pass_identifier, status, rewards(id, title, reward_type, value, status, expiration_date), guests(name), restaurants(name, logo_url, slug)",
+    )
+    .eq("pass_identifier", passIdentifier)
+    .maybeSingle();
+  return (data as WalletPassFull | null) ?? null;
 }
 
 export type DashboardStats = {

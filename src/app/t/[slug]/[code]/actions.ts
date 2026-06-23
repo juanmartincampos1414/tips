@@ -139,6 +139,7 @@ export type EmittedReward = {
   title: string;
   valueLabel: string;
   expiration: string;
+  passIdentifier: string;
 };
 
 export type CaptureState = {
@@ -177,23 +178,41 @@ async function emitReward(
     Date.now() + template.expiration_days * 24 * 60 * 60 * 1000,
   ).toISOString();
 
-  const { error } = await supabase.from("rewards").insert({
+  const { data: reward, error } = await supabase
+    .from("rewards")
+    .insert({
+      guest_id: guestId,
+      restaurant_id: restaurantId,
+      template_id: template.id,
+      title: template.title,
+      reward_type: template.reward_type,
+      value: template.value,
+      source: "recognition",
+      status: "active",
+      expiration_date: expiration,
+    })
+    .select("id")
+    .single();
+  if (error || !reward) return undefined;
+
+  // FR-019: generate a wallet pass (web provider) with a dynamic QR token.
+  const passIdentifier = crypto.randomUUID();
+  await supabase.from("wallet_passes").insert({
     guest_id: guestId,
+    reward_id: reward.id,
     restaurant_id: restaurantId,
-    template_id: template.id,
-    title: template.title,
-    reward_type: template.reward_type,
-    value: template.value,
-    source: "recognition",
+    wallet_provider: "web",
+    wallet_pass_url: `/w/${passIdentifier}`,
+    pass_identifier: passIdentifier,
+    qr_code: `/w/${passIdentifier}/v`,
     status: "active",
-    expiration_date: expiration,
   });
-  if (error) return undefined;
 
   return {
     title: template.title,
     valueLabel: rewardValueLabel(template.reward_type, template.value),
     expiration,
+    passIdentifier,
   };
 }
 
