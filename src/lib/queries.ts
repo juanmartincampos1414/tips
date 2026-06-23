@@ -2,6 +2,11 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentMembership } from "@/lib/auth";
+import {
+  contactChannels,
+  formatPhone,
+  type PreferredChannel,
+} from "@/lib/phone";
 import type { Database } from "@/lib/database.types";
 
 type Restaurant = Database["public"]["Tables"]["restaurants"]["Row"];
@@ -568,7 +573,12 @@ export type CrmGuest = {
   id: string;
   name: string | null;
   email: string | null;
-  phone: string | null;
+  phone: string | null; // formatted for display (never raw)
+  phoneNormalized: string | null; // E.164
+  hasEmail: boolean;
+  hasPhone: boolean;
+  hasWhatsapp: boolean;
+  preferredChannel: PreferredChannel;
   source: string;
   marketing_consent: boolean;
   lastStaffName: string | null;
@@ -662,11 +672,22 @@ export async function getCrmData(
   ).map((g) => {
     const returnVisits = returnsByGuest.get(g.id) ?? 0;
     const lastActivity = lastByGuest.get(g.id) ?? g.updated_at;
+    const channels = contactChannels({
+      email: g.email,
+      phoneNormalized: g.phone_normalized,
+      marketingConsent: g.marketing_consent,
+    });
     return {
       id: g.id,
       name: g.name,
       email: g.email,
-      phone: g.phone,
+      // Never surface raw phones: prefer the normalized E.164, formatted.
+      phone: formatPhone(g.phone_normalized) ?? formatPhone(g.phone),
+      phoneNormalized: g.phone_normalized,
+      hasEmail: channels.has_email,
+      hasPhone: channels.has_phone,
+      hasWhatsapp: channels.has_whatsapp,
+      preferredChannel: channels.preferred_channel,
       source: g.source,
       marketing_consent: g.marketing_consent,
       lastStaffName: g.staff?.name ?? null,

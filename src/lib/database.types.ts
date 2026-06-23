@@ -254,6 +254,8 @@ export interface Database {
           name: string | null;
           email: string | null;
           phone: string | null;
+          phone_normalized: string | null;
+          country_code: string | null;
           source: GuestSource;
           marketing_consent: boolean;
           last_staff_id: string | null;
@@ -268,6 +270,8 @@ export interface Database {
           name?: string | null;
           email?: string | null;
           phone?: string | null;
+          phone_normalized?: string | null;
+          country_code?: string | null;
           source?: GuestSource;
           marketing_consent?: boolean;
           last_staff_id?: string | null;

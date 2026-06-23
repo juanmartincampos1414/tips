@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { logAudit, requireManager } from "@/lib/auth";
+import { countryNameToIso, normalizePhone } from "@/lib/phone";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ImportRowAction, Json } from "@/lib/database.types";
 import {
@@ -160,16 +161,24 @@ export async function commitImport(formData: FormData): Promise<void> {
 
   const { data: rows } = await supabase
     .from("guest_import_rows")
-    .select("id, mapped, action, matched_guest_id")
+    .select("id, row_number, mapped, action, matched_guest_id")
     .eq("import_id", importId)
     .in("action", ["create", "update"])
     .order("row_number");
 
   let created = 0,
     updated = 0;
+  const phoneErrors: string[] = [];
 
   for (const r of rows ?? []) {
     const m = r.mapped as unknown as MappedGuest;
+
+    // Normalize the phone to E.164. Infer the region from the row's country
+    // column when present, else default AR. Log numbers we can't normalize.
+    const region = countryNameToIso(m.country) ?? "AR";
+    const ph = normalizePhone(m.phone, region);
+    if (m.phone && !ph.phone_normalized)
+      phoneErrors.push(`Fila ${r.row_number}: "${m.phone}" no se pudo normalizar.`);
 
     // Re-resolve by email at commit to avoid creating a duplicate of a guest
     // added since preview. Phone matches are already in matched_guest_id (the
@@ -199,7 +208,7 @@ export async function commitImport(formData: FormData): Promise<void> {
       // Merge: fill missing identity fields, merge metadata.
       const { data: g } = await supabase
         .from("guests")
-        .select("name, email, phone, birth_date, metadata")
+        .select("name, email, phone, phone_normalized, country_code, birth_date, metadata")
         .eq("id", guestId)
         .single();
       await supabase
@@ -207,7 +216,9 @@ export async function commitImport(formData: FormData): Promise<void> {
         .update({
           name: g?.name ?? m.name,
           email: g?.email ?? m.email,
-          phone: g?.phone ?? m.phone,
+          phone: g?.phone ?? ph.phone_raw,
+          phone_normalized: g?.phone_normalized ?? ph.phone_normalized,
+          country_code: g?.country_code ?? ph.country_code,
           birth_date: g?.birth_date ?? m.birth_date,
           metadata: {
             ...((g?.metadata as Record<string, unknown>) ?? {}),
@@ -223,7 +234,9 @@ export async function commitImport(formData: FormData): Promise<void> {
           restaurant_id: member.restaurantId,
           name: m.name,
           email: m.email,
-          phone: m.phone,
+          phone: ph.phone_raw,
+          phone_normalized: ph.phone_normalized,
+          country_code: ph.country_code,
           birth_date: m.birth_date,
           source: "import",
           metadata: importMeta as Json,
@@ -270,6 +283,13 @@ export async function commitImport(formData: FormData): Promise<void> {
     level: "info",
     message: `Importación completada: ${created} creados, ${updated} actualizados.`,
   });
+  if (phoneErrors.length)
+    await supabase.from("import_logs").insert({
+      import_id: importId,
+      restaurant_id: member.restaurantId,
+      level: "warn",
+      message: `Teléfonos no normalizados (${phoneErrors.length}): ${phoneErrors.slice(0, 20).join(" ")}`,
+    });
   await logAudit({
     restaurantId: member.restaurantId,
     userId: member.userId,

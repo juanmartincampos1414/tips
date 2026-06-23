@@ -26,7 +26,7 @@ function applyFilters(guests: CrmGuest[], q: string, list: string): CrmGuest[] {
   if (q) {
     const s = q.toLowerCase();
     r = r.filter((g) =>
-      [g.name, g.email, g.phone, ...g.tags].some((v) =>
+      [g.name, g.email, g.phone, g.phoneNormalized, ...g.tags].some((v) =>
         v?.toLowerCase().includes(s),
       ),
     );
@@ -43,9 +43,9 @@ function applyFilters(guests: CrmGuest[], q: string, list: string): CrmGuest[] {
     case "no_return":
       return r.filter((g) => g.returnVisits === 0);
     case "con_email":
-      return r.filter((g) => !!g.email);
+      return r.filter((g) => g.hasEmail);
     case "con_whatsapp":
-      return r.filter((g) => !!g.phone);
+      return r.filter((g) => g.hasWhatsapp);
     case "imported":
       return r.filter((g) => g.source === "import");
     case "tips":
@@ -162,17 +162,17 @@ export default async function ClientesPage({
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex gap-1">
-                      {g.email ? (
+                      {g.hasEmail ? (
                         <span title="Email" className="rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                           ✉
                         </span>
                       ) : null}
-                      {g.phone ? (
+                      {g.hasWhatsapp ? (
                         <span title="WhatsApp" className="rounded bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                           WA
                         </span>
                       ) : null}
-                      {!g.email && !g.phone ? (
+                      {!g.hasEmail && !g.hasWhatsapp ? (
                         <span className="text-xs text-muted">—</span>
                       ) : null}
                     </div>

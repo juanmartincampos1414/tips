@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { getGuestProfile, getGuestTimeline } from "@/lib/queries";
+import { formatPhone } from "@/lib/phone";
 import {
   computeScore,
   computeSegment,
@@ -68,7 +69,8 @@ export default async function GuestProfilePage({
             {guest.name ?? "—"}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {guest.email ?? "—"} · {guest.phone ?? "—"}
+            {guest.email ?? "—"} ·{" "}
+            {formatPhone(guest.phone_normalized) ?? formatPhone(guest.phone) ?? "—"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -77,7 +79,7 @@ export default async function GuestProfilePage({
               ✉ Email
             </span>
           ) : null}
-          {guest.phone ? (
+          {guest.phone_normalized ? (
             <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
               WhatsApp
             </span>

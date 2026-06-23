@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ReviewRoute } from "@/lib/database.types";
+import { normalizePhone } from "@/lib/phone";
 import { DEFAULT_TEMPLATE, rewardValueLabel } from "@/lib/rewards";
 
 export type RecognitionState = {
@@ -237,6 +238,9 @@ export async function captureGuest(
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     return { error: "Ingresá un email válido." };
 
+  // Normalize the phone to E.164 (omnichannel-ready). Default AR for the pilot.
+  const ph = normalizePhone(phone);
+
   const supabase = createAdminClient();
 
   // FR-012: create if new, update if the email already exists in this restaurant.
@@ -254,7 +258,9 @@ export async function captureGuest(
       .from("guests")
       .update({
         name,
-        phone: phone || null,
+        phone: ph.phone_raw,
+        phone_normalized: ph.phone_normalized,
+        country_code: ph.country_code,
         marketing_consent: consent,
         last_staff_id: staffId,
       })
@@ -266,7 +272,9 @@ export async function captureGuest(
         restaurant_id: restaurantId,
         name,
         email,
-        phone: phone || null,
+        phone: ph.phone_raw,
+        phone_normalized: ph.phone_normalized,
+        country_code: ph.country_code,
         marketing_consent: consent,
         last_staff_id: staffId,
         source: "recognition",
