@@ -375,9 +375,18 @@ export async function updateSettings(
   const owner = await requireOwner();
   const placeId = str(formData, "google_place_id");
   const reviewUrl = str(formData, "google_review_url");
+  const senderName = str(formData, "sender_name");
+  const senderEmail = str(formData, "sender_email");
+  const replyTo = str(formData, "reply_to_email");
+  const emailEnabled = formData.get("email_enabled") === "on";
 
   if (reviewUrl && !/^https?:\/\//.test(reviewUrl))
     return { fieldErrors: { google_review_url: "Tiene que empezar con http(s)://" } };
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (senderEmail && !emailRe.test(senderEmail))
+    return { fieldErrors: { sender_email: "Email inválido." } };
+  if (replyTo && !emailRe.test(replyTo))
+    return { fieldErrors: { reply_to_email: "Email inválido." } };
 
   const supabase = createAdminClient();
   const { error } = await supabase
@@ -387,6 +396,10 @@ export async function updateSettings(
         restaurant_id: owner.restaurantId,
         google_place_id: placeId || null,
         google_review_url: reviewUrl || null,
+        sender_name: senderName || null,
+        sender_email: senderEmail || null,
+        reply_to_email: replyTo || null,
+        email_enabled: emailEnabled,
       },
       { onConflict: "restaurant_id" },
     );

@@ -27,6 +27,10 @@ export default async function ConfiguracionPage() {
         <SettingsForm
           placeId={settings?.google_place_id ?? ""}
           reviewUrl={settings?.google_review_url ?? ""}
+          senderName={settings?.sender_name ?? ""}
+          senderEmail={settings?.sender_email ?? ""}
+          replyToEmail={settings?.reply_to_email ?? ""}
+          emailEnabled={settings?.email_enabled ?? false}
         />
       </Card>
     </div>

@@ -509,6 +509,21 @@ export async function getSettings(
   return data ?? null;
 }
 
+export type EmailTemplate =
+  Database["public"]["Tables"]["email_templates"]["Row"];
+
+export async function getEmailTemplates(
+  restaurantId: string,
+): Promise<EmailTemplate[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("email_templates")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+
 export type MemberRow = {
   id: string;
   role: Database["public"]["Tables"]["restaurant_members"]["Row"]["role"];

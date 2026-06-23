@@ -48,6 +48,16 @@ export type NfcEventType =
 export type ImportStatus = "previewed" | "completed" | "failed";
 export type ImportRowAction = "create" | "update" | "skip" | "invalid";
 
+export type EmailTemplateStatus = "draft" | "active" | "archived";
+export type EmailLogStatus = "pending" | "sent" | "failed" | "skipped";
+export type EmailEventType =
+  | "sent"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "bounced"
+  | "complained";
+
 export type Json =
   | string
   | number
@@ -577,6 +587,10 @@ export interface Database {
           restaurant_id: string;
           google_place_id: string | null;
           google_review_url: string | null;
+          sender_name: string | null;
+          sender_email: string | null;
+          reply_to_email: string | null;
+          email_enabled: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -585,12 +599,94 @@ export interface Database {
           restaurant_id: string;
           google_place_id?: string | null;
           google_review_url?: string | null;
+          sender_name?: string | null;
+          sender_email?: string | null;
+          reply_to_email?: string | null;
+          email_enabled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<
           Database["public"]["Tables"]["restaurant_settings"]["Insert"]
         >;
+        Relationships: [];
+      };
+      email_templates: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          name: string;
+          subject: string;
+          body: string;
+          status: EmailTemplateStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          name: string;
+          subject: string;
+          body: string;
+          status?: EmailTemplateStatus;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["email_templates"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      email_logs: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          guest_id: string | null;
+          template_id: string | null;
+          recipient_email: string;
+          subject: string;
+          status: EmailLogStatus;
+          provider_message_id: string | null;
+          error_message: string | null;
+          sent_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          guest_id?: string | null;
+          template_id?: string | null;
+          recipient_email: string;
+          subject: string;
+          status?: EmailLogStatus;
+          provider_message_id?: string | null;
+          error_message?: string | null;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["email_logs"]["Insert"]>;
+        Relationships: [];
+      };
+      email_events: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          guest_id: string | null;
+          email_log_id: string;
+          event_type: EmailEventType;
+          metadata: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          guest_id?: string | null;
+          email_log_id: string;
+          event_type: EmailEventType;
+          metadata?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["email_events"]["Insert"]>;
         Relationships: [];
       };
       nfc_inventory: {
