@@ -7,6 +7,7 @@ export type MappedGuest = {
   email: string | null;
   phone: string | null;
   birth_date: string | null;
+  country: string | null;
   notes: string | null;
   tags: string[];
   visits: number | null;
@@ -14,17 +15,28 @@ export type MappedGuest = {
   segment: string | null;
 };
 
-// Header synonyms (lowercased, accent-stripped) per field. First match wins.
-const SYNONYMS: Record<keyof Omit<MappedGuest, "tags"> | "tags", string[]> = {
-  name: ["nombre", "name", "full name", "fullname", "cliente", "guest", "contacto"],
-  email: ["email", "e-mail", "correo", "mail", "correo electronico"],
-  phone: ["telefono", "phone", "celular", "movil", "mobile", "tel", "whatsapp", "numero"],
-  birth_date: ["nacimiento", "fecha nacimiento", "birth", "birthday", "dob", "cumpleanos"],
-  notes: ["notas", "notes", "comentarios", "observaciones", "comment"],
-  tags: ["tags", "etiquetas", "labels"],
-  visits: ["visitas", "visits", "covers", "cantidad de visitas", "total visitas"],
-  last_visit: ["ultima visita", "last visit", "ultima reserva", "last seen"],
-  segment: ["segmento", "segment", "tipo", "categoria"],
+// Header synonyms (lowercased, accent-stripped). Spanish + English (Maitre,
+// OpenTable, SevenRooms, CoverManager, PMS exports). first_name/last_name are
+// combined into name when there is no single full-name column.
+const SYNONYMS: Record<string, string[]> = {
+  name: [
+    "nombre", "nombre completo", "nombre y apellido", "name", "full name",
+    "fullname", "cliente", "client", "customer", "guest", "contacto", "contact",
+  ],
+  first_name: ["primer nombre", "first name", "firstname", "nombres"],
+  last_name: ["apellido", "apellidos", "last name", "lastname", "surname"],
+  email: ["email", "e-mail", "correo", "correo electronico", "mail"],
+  phone: [
+    "telefono", "phone", "phone number", "celular", "movil", "mobile", "tel",
+    "whatsapp", "numero", "número", "cell",
+  ],
+  birth_date: ["nacimiento", "fecha nacimiento", "fecha de nacimiento", "birth", "birthday", "birth date", "dob", "cumpleanos"],
+  country: ["pais", "country", "nacionalidad", "nationality"],
+  notes: ["notas", "nota", "notes", "comentarios", "observaciones", "comment", "comments"],
+  tags: ["tags", "tag", "etiquetas", "labels"],
+  visits: ["visitas", "visits", "covers", "cantidad de visitas", "total visitas", "book"],
+  last_visit: ["ultima visita", "last visit", "ultima reserva", "last seen", "last visit date"],
+  segment: ["segmento", "segment", "tipo", "categoria", "category"],
 };
 
 const strip = (s: string) =>
@@ -60,13 +72,29 @@ export async function parseFile(file: File): Promise<ParsedFile> {
   return { headers, rows: matrix.slice(1) };
 }
 
-/** Map source column indexes to our fields by header synonyms. */
+/** Map source column indexes to our fields: exact match first, then substring;
+ *  a column is claimed by at most one field. */
 export function mapHeaders(headers: string[]): Record<string, number> {
   const norm = headers.map(strip);
   const map: Record<string, number> = {};
-  for (const [field, syns] of Object.entries(SYNONYMS)) {
-    const idx = norm.findIndex((h) => h && syns.some((s) => h === s || h.includes(s)));
-    if (idx >= 0) map[field] = idx;
+  const used = new Set<number>();
+  const entries = Object.entries(SYNONYMS);
+  for (const [field, syns] of entries) {
+    const idx = norm.findIndex((h, i) => !used.has(i) && h && syns.includes(h));
+    if (idx >= 0) {
+      map[field] = idx;
+      used.add(idx);
+    }
+  }
+  for (const [field, syns] of entries) {
+    if (map[field] != null) continue;
+    const idx = norm.findIndex(
+      (h, i) => !used.has(i) && h && syns.some((s) => h.includes(s)),
+    );
+    if (idx >= 0) {
+      map[field] = idx;
+      used.add(idx);
+    }
   }
   return map;
 }
@@ -102,11 +130,19 @@ export function phoneKey(s: string): string | null {
 
 export function mapRow(row: unknown[], hmap: Record<string, number>): MappedGuest {
   const tagsRaw = cell(row, hmap.tags);
+  // Single full-name column, else combine first + last name.
+  const name =
+    cell(row, hmap.name) ||
+    [cell(row, hmap.first_name), cell(row, hmap.last_name)]
+      .filter(Boolean)
+      .join(" ") ||
+    "";
   return {
-    name: cell(row, hmap.name) || null,
+    name: name || null,
     email: normalizeEmail(cell(row, hmap.email)),
     phone: cell(row, hmap.phone) || null,
     birth_date: toDate(cell(row, hmap.birth_date)),
+    country: cell(row, hmap.country) || null,
     notes: cell(row, hmap.notes) || null,
     tags: tagsRaw
       ? tagsRaw

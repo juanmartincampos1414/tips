@@ -186,10 +186,13 @@ export async function commitImport(formData: FormData): Promise<void> {
       guestId = hit?.id ?? null;
     }
 
+    // Preserve everything from the source system (architecture-first).
     const importMeta = {
+      country: m.country,
       imported_visits: m.visits,
       imported_last_visit: m.last_visit,
       imported_segment: m.segment,
+      imported_notes: m.notes,
     };
 
     if (guestId) {

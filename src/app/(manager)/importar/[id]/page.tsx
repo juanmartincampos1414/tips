@@ -75,14 +75,22 @@ export default async function ImportDetailPage({
         </Card>
       )}
 
-      <Card className="overflow-hidden p-0">
-        <table className="w-full text-left text-sm">
+      <p className="mb-2 text-xs text-muted">
+        Así van a entrar al CRM. Revisá cada fila antes de confirmar.
+      </p>
+      <Card className="overflow-x-auto p-0">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-border text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3 font-medium">#</th>
-              <th className="px-4 py-3 font-medium">Nombre</th>
-              <th className="px-4 py-3 font-medium">Contacto</th>
-              <th className="px-4 py-3 font-medium">Acción</th>
+              <th className="px-3 py-3 font-medium">#</th>
+              <th className="px-3 py-3 font-medium">Nombre</th>
+              <th className="px-3 py-3 font-medium">Email</th>
+              <th className="px-3 py-3 font-medium">Teléfono</th>
+              <th className="px-3 py-3 font-medium">Nacimiento</th>
+              <th className="px-3 py-3 font-medium">País</th>
+              <th className="px-3 py-3 font-medium">Tags</th>
+              <th className="px-3 py-3 font-medium">Segmento</th>
+              <th className="px-3 py-3 font-medium">Acción</th>
             </tr>
           </thead>
           <tbody>
@@ -91,23 +99,29 @@ export default async function ImportDetailPage({
                 name?: string;
                 email?: string;
                 phone?: string;
+                birth_date?: string;
+                country?: string;
+                tags?: string[];
+                segment?: string;
               };
               return (
                 <tr key={r.id} className="border-b border-border/60 last:border-0">
-                  <td className="px-4 py-2 text-muted">{r.row_number}</td>
-                  <td className="px-4 py-2 font-medium text-dark">
-                    {m.name ?? "—"}
+                  <td className="px-3 py-2 text-muted">{r.row_number}</td>
+                  <td className="px-3 py-2 font-medium text-dark">{m.name ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{m.email ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{m.phone ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{m.birth_date ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{m.country ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-muted">
+                    {m.tags?.length ? m.tags.join(", ") : "—"}
                   </td>
-                  <td className="px-4 py-2 text-xs text-muted">
-                    {m.email ?? "—"}
-                    {m.phone ? ` · ${m.phone}` : ""}
-                  </td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-2 text-xs text-muted">{m.segment ?? "—"}</td>
+                  <td className="px-3 py-2">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${ACTION[r.action].cls}`}>
                       {ACTION[r.action].label}
                     </span>
                     {r.error ? (
-                      <span className="ml-2 text-xs text-muted">{r.error}</span>
+                      <span className="ml-1 block text-[11px] text-muted">{r.error}</span>
                     ) : null}
                   </td>
                 </tr>

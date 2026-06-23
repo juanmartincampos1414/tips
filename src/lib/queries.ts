@@ -564,6 +564,154 @@ export type GuestListRow = GuestWithStaff & {
   returnVisits: number;
 };
 
+export type CrmGuest = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  source: string;
+  marketing_consent: boolean;
+  lastStaffName: string | null;
+  created_at: string;
+  segment: import("@/lib/segments").Segment;
+  recognitionEvents: number;
+  returnVisits: number;
+  rewardsClaimed: number;
+  activeRewards: number;
+  tags: string[];
+  lastActivity: string;
+};
+
+export type CrmKpis = {
+  total: number;
+  newCount: number;
+  returning: number;
+  vip: number;
+  atRisk: number;
+  lost: number;
+  imported: number;
+  tips: number;
+  captureRate: number | null;
+  returnVisitRate: number | null;
+  rewardRedemptionRate: number | null;
+};
+
+export async function getCrmData(
+  restaurantId: string,
+): Promise<{ guests: CrmGuest[]; kpis: CrmKpis }> {
+  const { computeSegment } = await import("@/lib/segments");
+  const supabase = createAdminClient();
+  const [
+    { data: guests },
+    { data: events },
+    { data: returns },
+    { data: rewards },
+    { data: tags },
+  ] = await Promise.all([
+    supabase
+      .from("guests")
+      .select("*, staff:last_staff_id(name)")
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("recognition_events")
+      .select("guest_id, created_at")
+      .eq("restaurant_id", restaurantId),
+    supabase
+      .from("return_visits")
+      .select("guest_id, created_at")
+      .eq("restaurant_id", restaurantId),
+    supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId),
+    supabase.from("guest_tags").select("guest_id, tag").eq("restaurant_id", restaurantId),
+  ]);
+
+  const eventsByGuest = new Map<string, number>();
+  const lastByGuest = new Map<string, string>();
+  const setLast = (g: string | null, d: string) => {
+    if (!g) return;
+    if (!lastByGuest.get(g) || lastByGuest.get(g)! < d) lastByGuest.set(g, d);
+  };
+  for (const e of events ?? []) {
+    if (e.guest_id) eventsByGuest.set(e.guest_id, (eventsByGuest.get(e.guest_id) ?? 0) + 1);
+    setLast(e.guest_id, e.created_at);
+  }
+  const returnsByGuest = new Map<string, number>();
+  for (const r of returns ?? []) {
+    returnsByGuest.set(r.guest_id, (returnsByGuest.get(r.guest_id) ?? 0) + 1);
+    setLast(r.guest_id, r.created_at);
+  }
+  const claimedByGuest = new Map<string, number>();
+  const activeByGuest = new Map<string, number>();
+  let totalClaimed = 0,
+    totalIssued = 0;
+  for (const rw of rewards ?? []) {
+    totalIssued++;
+    if (rw.status === "claimed") {
+      totalClaimed++;
+      claimedByGuest.set(rw.guest_id, (claimedByGuest.get(rw.guest_id) ?? 0) + 1);
+    } else if (rw.status === "active") {
+      activeByGuest.set(rw.guest_id, (activeByGuest.get(rw.guest_id) ?? 0) + 1);
+    }
+  }
+  const tagsByGuest = new Map<string, string[]>();
+  for (const t of tags ?? [])
+    tagsByGuest.set(t.guest_id, [...(tagsByGuest.get(t.guest_id) ?? []), t.tag]);
+
+  const crm: CrmGuest[] = (
+    (guests as (Guest & { staff: { name: string } | null })[] | null) ?? []
+  ).map((g) => {
+    const returnVisits = returnsByGuest.get(g.id) ?? 0;
+    const lastActivity = lastByGuest.get(g.id) ?? g.updated_at;
+    return {
+      id: g.id,
+      name: g.name,
+      email: g.email,
+      phone: g.phone,
+      source: g.source,
+      marketing_consent: g.marketing_consent,
+      lastStaffName: g.staff?.name ?? null,
+      created_at: g.created_at,
+      recognitionEvents: eventsByGuest.get(g.id) ?? 0,
+      returnVisits,
+      rewardsClaimed: claimedByGuest.get(g.id) ?? 0,
+      activeRewards: activeByGuest.get(g.id) ?? 0,
+      tags: tagsByGuest.get(g.id) ?? [],
+      lastActivity,
+      segment: computeSegment({
+        recognitionEvents: 0,
+        reviews: 0,
+        avgRating: null,
+        rewardsIssued: 0,
+        rewardsClaimed: claimedByGuest.get(g.id) ?? 0,
+        returnVisits,
+        lastActivity,
+      }),
+    };
+  });
+
+  const totalEvents = (events ?? []).length;
+  const seg = (s: string) => crm.filter((g) => g.segment === s).length;
+  const tipsCount = crm.filter((g) => g.source !== "import").length;
+  const returning = crm.filter((g) => g.returnVisits >= 1).length;
+
+  return {
+    guests: crm,
+    kpis: {
+      total: crm.length,
+      newCount: seg("new"),
+      returning: seg("returning"),
+      vip: seg("vip"),
+      atRisk: seg("at_risk"),
+      lost: seg("lost"),
+      imported: crm.filter((g) => g.source === "import").length,
+      tips: tipsCount,
+      captureRate: totalEvents > 0 ? tipsCount / totalEvents : null,
+      returnVisitRate: crm.length > 0 ? returning / crm.length : null,
+      rewardRedemptionRate: totalIssued > 0 ? totalClaimed / totalIssued : null,
+    },
+  };
+}
+
 /** Guests with their computed segment (cheap aggregates, pilot scale). */
 export async function getGuestsList(
   restaurantId: string,
@@ -863,6 +1011,109 @@ export async function getImportRows(
     .order("row_number")
     .limit(limit);
   return data ?? [];
+}
+
+export type StaffImpactRow = {
+  id: string;
+  name: string;
+  recognitionEvents: number;
+  avgRating: number | null;
+  reviews: number;
+  guestsCaptured: number;
+  rewardsIssued: number;
+  rewardsClaimed: number;
+  returnVisits: number;
+};
+
+export async function getStaffImpact(
+  restaurantId: string,
+): Promise<StaffImpactRow[]> {
+  const supabase = createAdminClient();
+  const [
+    { data: staff },
+    { data: events },
+    { data: ratings },
+    { data: reviews },
+    { data: guests },
+    { data: rewards },
+    { data: returns },
+  ] = await Promise.all([
+    supabase
+      .from("staff")
+      .select("id, name")
+      .eq("restaurant_id", restaurantId)
+      .neq("status", "archived"),
+    supabase
+      .from("recognition_events")
+      .select("id, staff_id, rating_id")
+      .eq("restaurant_id", restaurantId),
+    supabase.from("ratings").select("id, rating"),
+    supabase
+      .from("review_requests")
+      .select("recognition_event_id, route, status")
+      .eq("restaurant_id", restaurantId),
+    supabase
+      .from("guests")
+      .select("id, last_staff_id")
+      .eq("restaurant_id", restaurantId),
+    supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId),
+    supabase.from("return_visits").select("guest_id").eq("restaurant_id", restaurantId),
+  ]);
+
+  const ratingById = new Map((ratings ?? []).map((r) => [r.id, r.rating]));
+  const eventStaff = new Map<string, string>(); // event id → staff
+  const recCount = new Map<string, number>();
+  const ratingSum = new Map<string, number>();
+  const ratingN = new Map<string, number>();
+  for (const e of events ?? []) {
+    if (!e.staff_id) continue;
+    eventStaff.set(e.id, e.staff_id);
+    recCount.set(e.staff_id, (recCount.get(e.staff_id) ?? 0) + 1);
+    const rv = e.rating_id ? ratingById.get(e.rating_id) : undefined;
+    if (typeof rv === "number") {
+      ratingSum.set(e.staff_id, (ratingSum.get(e.staff_id) ?? 0) + rv);
+      ratingN.set(e.staff_id, (ratingN.get(e.staff_id) ?? 0) + 1);
+    }
+  }
+  const reviewCount = new Map<string, number>();
+  for (const rr of reviews ?? []) {
+    if (rr.route !== "public_review" || rr.status !== "completed") continue;
+    const s = rr.recognition_event_id ? eventStaff.get(rr.recognition_event_id) : null;
+    if (s) reviewCount.set(s, (reviewCount.get(s) ?? 0) + 1);
+  }
+  const guestStaff = new Map<string, string>(); // guest → last staff
+  const captured = new Map<string, number>();
+  for (const g of guests ?? []) {
+    if (g.last_staff_id) {
+      guestStaff.set(g.id, g.last_staff_id);
+      captured.set(g.last_staff_id, (captured.get(g.last_staff_id) ?? 0) + 1);
+    }
+  }
+  const rIssued = new Map<string, number>();
+  const rClaimed = new Map<string, number>();
+  for (const rw of rewards ?? []) {
+    const s = guestStaff.get(rw.guest_id);
+    if (!s) continue;
+    rIssued.set(s, (rIssued.get(s) ?? 0) + 1);
+    if (rw.status === "claimed") rClaimed.set(s, (rClaimed.get(s) ?? 0) + 1);
+  }
+  const retCount = new Map<string, number>();
+  for (const v of returns ?? []) {
+    const s = guestStaff.get(v.guest_id);
+    if (s) retCount.set(s, (retCount.get(s) ?? 0) + 1);
+  }
+
+  return ((staff as { id: string; name: string }[] | null) ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    recognitionEvents: recCount.get(s.id) ?? 0,
+    avgRating: ratingN.get(s.id) ? ratingSum.get(s.id)! / ratingN.get(s.id)! : null,
+    reviews: reviewCount.get(s.id) ?? 0,
+    guestsCaptured: captured.get(s.id) ?? 0,
+    rewardsIssued: rIssued.get(s.id) ?? 0,
+    rewardsClaimed: rClaimed.get(s.id) ?? 0,
+    returnVisits: retCount.get(s.id) ?? 0,
+  }));
 }
 
 export type DashboardStats = {

@@ -71,7 +71,17 @@ export default async function GuestProfilePage({
             {guest.email ?? "—"} · {guest.phone ?? "—"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {guest.email ? (
+            <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
+              ✉ Email
+            </span>
+          ) : null}
+          {guest.phone ? (
+            <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
+              WhatsApp
+            </span>
+          ) : null}
           <span className={`rounded-full px-3 py-1 text-xs font-medium ${SEGMENT_CLS[segment]}`}>
             {SEGMENT_LABEL[segment]}
           </span>
@@ -80,6 +90,33 @@ export default async function GuestProfilePage({
           </span>
         </div>
       </header>
+
+      {(() => {
+        const meta = (guest.metadata ?? {}) as Record<string, unknown>;
+        const hasImported =
+          guest.source === "import" ||
+          meta.country ||
+          meta.imported_visits ||
+          meta.imported_segment;
+        if (!hasImported) return null;
+        return (
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Info label="País" value={(meta.country as string) ?? "—"} />
+            <Info
+              label="Visitas históricas"
+              value={meta.imported_visits != null ? String(meta.imported_visits) : "—"}
+            />
+            <Info
+              label="Última visita (origen)"
+              value={(meta.imported_last_visit as string) ?? "—"}
+            />
+            <Info
+              label="Segmento original"
+              value={(meta.imported_segment as string) ?? "—"}
+            />
+          </div>
+        );
+      })()}
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {statCards.map((s) => (
