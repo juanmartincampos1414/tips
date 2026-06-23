@@ -255,6 +255,8 @@ export interface Database {
           source: GuestSource;
           marketing_consent: boolean;
           last_staff_id: string | null;
+          birth_date: string | null;
+          metadata: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -267,10 +269,52 @@ export interface Database {
           source?: GuestSource;
           marketing_consent?: boolean;
           last_staff_id?: string | null;
+          birth_date?: string | null;
+          metadata?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["guests"]["Insert"]>;
+        Relationships: [];
+      };
+      guest_notes: {
+        Row: {
+          id: string;
+          guest_id: string;
+          restaurant_id: string;
+          body: string;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          guest_id: string;
+          restaurant_id: string;
+          body: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["guest_notes"]["Insert"]>;
+        Relationships: [];
+      };
+      guest_tags: {
+        Row: {
+          id: string;
+          guest_id: string;
+          restaurant_id: string;
+          tag: string;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          guest_id: string;
+          restaurant_id: string;
+          tag: string;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["guest_tags"]["Insert"]>;
         Relationships: [];
       };
       reward_templates: {

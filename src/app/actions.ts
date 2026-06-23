@@ -558,3 +558,72 @@ export async function markNfcStatus(formData: FormData): Promise<void> {
   revalidatePath("/nfc");
   revalidatePath("/staff");
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 06A · Guest notes & tags
+// ---------------------------------------------------------------------------
+export async function addGuestNote(formData: FormData): Promise<void> {
+  const member = await requireManager();
+  const guestId = str(formData, "guest_id");
+  const body = str(formData, "body");
+  if (!guestId || !body) return;
+
+  const supabase = createAdminClient();
+  await supabase.from("guest_notes").insert({
+    guest_id: guestId,
+    restaurant_id: member.restaurantId,
+    body,
+    created_by: member.userId,
+  });
+  await logAudit({
+    restaurantId: member.restaurantId,
+    userId: member.userId,
+    action: "guest.note_added",
+    entityType: "guest",
+    entityId: guestId,
+  });
+  revalidatePath(`/clientes/${guestId}`);
+}
+
+export async function addGuestTag(formData: FormData): Promise<void> {
+  const member = await requireManager();
+  const guestId = str(formData, "guest_id");
+  const tag = str(formData, "tag");
+  if (!guestId || !tag) return;
+
+  const supabase = createAdminClient();
+  await supabase
+    .from("guest_tags")
+    .insert({
+      guest_id: guestId,
+      restaurant_id: member.restaurantId,
+      tag,
+      created_by: member.userId,
+    })
+    .select("id")
+    .maybeSingle();
+  await logAudit({
+    restaurantId: member.restaurantId,
+    userId: member.userId,
+    action: "guest.tag_added",
+    entityType: "guest",
+    entityId: guestId,
+    metadata: { tag },
+  });
+  revalidatePath(`/clientes/${guestId}`);
+}
+
+export async function removeGuestTag(formData: FormData): Promise<void> {
+  const member = await requireManager();
+  const tagId = str(formData, "tag_id");
+  const guestId = str(formData, "guest_id");
+  if (!tagId) return;
+
+  const supabase = createAdminClient();
+  await supabase
+    .from("guest_tags")
+    .delete()
+    .eq("id", tagId)
+    .eq("restaurant_id", member.restaurantId);
+  if (guestId) revalidatePath(`/clientes/${guestId}`);
+}

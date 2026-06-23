@@ -556,6 +556,272 @@ export async function getStaffOptions(
   return data ?? [];
 }
 
+type GuestNote = Database["public"]["Tables"]["guest_notes"]["Row"];
+type GuestTag = Database["public"]["Tables"]["guest_tags"]["Row"];
+
+export type GuestListRow = GuestWithStaff & {
+  segment: import("@/lib/segments").Segment;
+  returnVisits: number;
+};
+
+/** Guests with their computed segment (cheap aggregates, pilot scale). */
+export async function getGuestsList(
+  restaurantId: string,
+): Promise<GuestListRow[]> {
+  const { computeSegment } = await import("@/lib/segments");
+  const supabase = createAdminClient();
+  const [{ data: guests }, { data: events }, { data: returns }] =
+    await Promise.all([
+      supabase
+        .from("guests")
+        .select("*, staff:last_staff_id(name)")
+        .eq("restaurant_id", restaurantId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("recognition_events")
+        .select("guest_id, created_at")
+        .eq("restaurant_id", restaurantId)
+        .not("guest_id", "is", null),
+      supabase
+        .from("return_visits")
+        .select("guest_id, created_at")
+        .eq("restaurant_id", restaurantId),
+    ]);
+
+  const lastByGuest = new Map<string, string>();
+  const returnsByGuest = new Map<string, number>();
+  for (const e of events ?? []) {
+    const g = e.guest_id as string;
+    if (!lastByGuest.get(g) || lastByGuest.get(g)! < e.created_at)
+      lastByGuest.set(g, e.created_at);
+  }
+  for (const r of returns ?? []) {
+    returnsByGuest.set(r.guest_id, (returnsByGuest.get(r.guest_id) ?? 0) + 1);
+    if (!lastByGuest.get(r.guest_id) || lastByGuest.get(r.guest_id)! < r.created_at)
+      lastByGuest.set(r.guest_id, r.created_at);
+  }
+
+  return ((guests as GuestWithStaff[] | null) ?? []).map((g) => {
+    const returnVisits = returnsByGuest.get(g.id) ?? 0;
+    const lastActivity = lastByGuest.get(g.id) ?? g.updated_at;
+    return {
+      ...g,
+      returnVisits,
+      segment: computeSegment({
+        recognitionEvents: 0,
+        reviews: 0,
+        avgRating: null,
+        rewardsIssued: 0,
+        rewardsClaimed: 0,
+        returnVisits,
+        lastActivity,
+      }),
+    };
+  });
+}
+
+export type GuestProfile = {
+  guest: Guest;
+  lastStaffName: string | null;
+  stats: import("@/lib/segments").GuestStats;
+  notes: GuestNote[];
+  tags: GuestTag[];
+};
+
+export async function getGuestProfile(
+  guestId: string,
+): Promise<GuestProfile | null> {
+  const supabase = createAdminClient();
+  const { data: guest } = await supabase
+    .from("guests")
+    .select("*, staff:last_staff_id(name)")
+    .eq("id", guestId)
+    .maybeSingle();
+  if (!guest) return null;
+  const { staff, ...guestRow } = guest as Guest & {
+    staff: { name: string } | null;
+  };
+
+  const [events, rewards, returns, reviewsCount, notesRes, tagsRes] =
+    await Promise.all([
+      supabase
+        .from("recognition_events")
+        .select("created_at, ratings(rating)")
+        .eq("guest_id", guestId),
+      supabase.from("rewards").select("status").eq("guest_id", guestId),
+      supabase
+        .from("return_visits")
+        .select("created_at")
+        .eq("guest_id", guestId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("review_requests")
+        .select("id, recognition_events!inner(guest_id)", {
+          count: "exact",
+          head: true,
+        })
+        .eq("recognition_events.guest_id", guestId)
+        .eq("route", "public_review")
+        .eq("status", "completed"),
+      supabase
+        .from("guest_notes")
+        .select("*")
+        .eq("guest_id", guestId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("guest_tags")
+        .select("*")
+        .eq("guest_id", guestId)
+        .order("created_at", { ascending: true }),
+    ]);
+
+  const eventRows = (events.data ?? []) as {
+    created_at: string;
+    ratings: { rating: number } | null;
+  }[];
+  const ratings = eventRows
+    .map((e) => e.ratings?.rating)
+    .filter((r): r is number => typeof r === "number");
+  const avgRating = ratings.length
+    ? ratings.reduce((a, b) => a + b, 0) / ratings.length
+    : null;
+
+  const rewardRows = rewards.data ?? [];
+  const returnRows = returns.data ?? [];
+
+  const activityDates = [
+    ...eventRows.map((e) => e.created_at),
+    ...returnRows.map((r) => r.created_at),
+    guestRow.updated_at,
+  ].filter(Boolean) as string[];
+  const lastActivity = activityDates.length
+    ? activityDates.sort().at(-1)!
+    : null;
+
+  return {
+    guest: guestRow,
+    lastStaffName: staff?.name ?? null,
+    notes: notesRes.data ?? [],
+    tags: tagsRes.data ?? [],
+    stats: {
+      recognitionEvents: eventRows.length,
+      reviews: reviewsCount.count ?? 0,
+      avgRating,
+      rewardsIssued: rewardRows.length,
+      rewardsClaimed: rewardRows.filter((r) => r.status === "claimed").length,
+      returnVisits: returnRows.length,
+      lastActivity,
+    },
+  };
+}
+
+export type TimelineItem = {
+  type: string;
+  label: string;
+  detail: string | null;
+  at: string;
+};
+
+export async function getGuestTimeline(
+  guestId: string,
+): Promise<TimelineItem[]> {
+  const supabase = createAdminClient();
+  const [events, reviews, rewards, claims, returns, notes] = await Promise.all([
+    supabase
+      .from("recognition_events")
+      .select("created_at, ratings(rating), tips(amount)")
+      .eq("guest_id", guestId),
+    supabase
+      .from("review_requests")
+      .select("created_at, route, status, recognition_events!inner(guest_id)")
+      .eq("recognition_events.guest_id", guestId),
+    supabase
+      .from("rewards")
+      .select("created_at, title")
+      .eq("guest_id", guestId),
+    supabase
+      .from("reward_claims")
+      .select("claimed_at, rewards(title)")
+      .eq("guest_id", guestId),
+    supabase.from("return_visits").select("created_at").eq("guest_id", guestId),
+    supabase
+      .from("guest_notes")
+      .select("created_at, body")
+      .eq("guest_id", guestId),
+  ]);
+
+  const items: TimelineItem[] = [];
+  for (const e of (events.data ?? []) as {
+    created_at: string;
+    ratings: { rating: number } | null;
+    tips: { amount: number } | null;
+  }[]) {
+    items.push({
+      type: "recognition",
+      label: "Reconocimiento",
+      detail: [
+        e.ratings ? `${e.ratings.rating}★` : null,
+        e.tips ? `propina $${Number(e.tips.amount).toLocaleString("es-AR")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || null,
+      at: e.created_at,
+    });
+  }
+  for (const r of (reviews.data ?? []) as {
+    created_at: string;
+    route: string;
+    status: string;
+  }[]) {
+    items.push({
+      type: "review",
+      label: r.route === "public_review" ? "Reseña pública" : "Feedback privado",
+      detail: r.status === "completed" ? "completada" : r.status,
+      at: r.created_at,
+    });
+  }
+  for (const r of (rewards.data ?? []) as {
+    created_at: string;
+    title: string;
+  }[]) {
+    items.push({
+      type: "reward_issued",
+      label: "Reward emitida",
+      detail: r.title,
+      at: r.created_at,
+    });
+  }
+  for (const c of (claims.data ?? []) as {
+    claimed_at: string;
+    rewards: { title: string } | null;
+  }[]) {
+    items.push({
+      type: "reward_claimed",
+      label: "Reward reclamada",
+      detail: c.rewards?.title ?? null,
+      at: c.claimed_at,
+    });
+  }
+  for (const v of (returns.data ?? []) as { created_at: string }[]) {
+    items.push({
+      type: "return_visit",
+      label: "Return visit",
+      detail: null,
+      at: v.created_at,
+    });
+  }
+  for (const n of (notes.data ?? []) as { created_at: string; body: string }[]) {
+    items.push({
+      type: "note",
+      label: "Nota",
+      detail: n.body,
+      at: n.created_at,
+    });
+  }
+
+  return items.sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
 export type DashboardStats = {
   totalStaff: number;
   totalVisits: number;

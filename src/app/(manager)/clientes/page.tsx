@@ -1,9 +1,12 @@
+import Link from "next/link";
+
 import { Card } from "@/components/ui/card";
 import {
   getCaptureStats,
   getCurrentRestaurant,
-  getGuests,
+  getGuestsList,
 } from "@/lib/queries";
+import { SEGMENT_CLS, SEGMENT_LABEL } from "@/lib/segments";
 
 const dateFmt = (iso: string) =>
   new Date(iso).toLocaleDateString("es-AR", {
@@ -15,7 +18,7 @@ const dateFmt = (iso: string) =>
 export default async function ClientesPage() {
   const restaurant = (await getCurrentRestaurant())!;
   const [guests, capture] = await Promise.all([
-    getGuests(restaurant.id),
+    getGuestsList(restaurant.id),
     getCaptureStats(restaurant.id),
   ]);
 
@@ -64,10 +67,10 @@ export default async function ClientesPage() {
             <thead className="border-b border-border text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-5 py-3 font-medium">Cliente</th>
-                <th className="px-5 py-3 font-medium">Teléfono</th>
+                <th className="px-5 py-3 font-medium">Segmento</th>
                 <th className="px-5 py-3 font-medium">Atendido por</th>
-                <th className="px-5 py-3 font-medium">Novedades</th>
                 <th className="px-5 py-3 font-medium">Alta</th>
+                <th className="px-5 py-3 text-right font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -82,23 +85,24 @@ export default async function ClientesPage() {
                     </div>
                     <div className="text-xs text-muted">{guest.email ?? "—"}</div>
                   </td>
-                  <td className="px-5 py-3 text-muted">{guest.phone ?? "—"}</td>
+                  <td className="px-5 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${SEGMENT_CLS[guest.segment]}`}>
+                      {SEGMENT_LABEL[guest.segment]}
+                    </span>
+                  </td>
                   <td className="px-5 py-3 text-muted">
                     {guest.staff?.name ?? "—"}
                   </td>
-                  <td className="px-5 py-3">
-                    {guest.marketing_consent ? (
-                      <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
-                        Sí
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted">
-                        No
-                      </span>
-                    )}
-                  </td>
                   <td className="px-5 py-3 text-muted">
                     {dateFmt(guest.created_at)}
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <Link
+                      href={`/clientes/${guest.id}`}
+                      className="text-xs font-semibold text-pink hover:underline"
+                    >
+                      Ver perfil →
+                    </Link>
                   </td>
                 </tr>
               ))}
