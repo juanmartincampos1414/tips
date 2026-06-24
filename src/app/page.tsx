@@ -1,8 +1,19 @@
+import Image from "next/image";
+
 import { BRAND } from "@/lib/brand";
 
 export default function Home() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
+      <Image
+        src="/logo.png"
+        alt="Tips"
+        width={260}
+        height={173}
+        priority
+        className="mb-8 h-auto w-56"
+      />
+
       <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium text-muted">
         <span className="inline-block h-2 w-2 rounded-full bg-pink" />
         {BRAND.category}
