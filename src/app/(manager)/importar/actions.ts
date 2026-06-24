@@ -17,6 +17,24 @@ import {
 
 export type ImportState = { error?: string };
 
+// Vercel: large imports need more than the default 10s.
+export const maxDuration = 300;
+
+/** Fetch every row, paging past PostgREST's 1000-row cap. */
+async function fetchAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
+): Promise<T[]> {
+  const size = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += size) {
+    const { data } = await page(from, from + size - 1);
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < size) break;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 1 — Preview: parse + classify rows, no writes to guests.
 // ---------------------------------------------------------------------------
@@ -46,11 +64,19 @@ export async function previewImport(
 
   const supabase = createAdminClient();
 
-  // Existing guests for dedup (email + phone digits → id).
-  const { data: existing } = await supabase
-    .from("guests")
-    .select("id, email, phone")
-    .eq("restaurant_id", member.restaurantId);
+  // Existing guests for dedup (email + phone digits → id). Paginated so dedup
+  // covers the WHOLE base, not just the first 1000.
+  const existing = await fetchAllRows<{
+    id: string;
+    email: string | null;
+    phone: string | null;
+  }>((f, t) =>
+    supabase
+      .from("guests")
+      .select("id, email, phone")
+      .eq("restaurant_id", member.restaurantId)
+      .range(f, t),
+  );
   const byEmail = new Map<string, string>();
   const byPhone = new Map<string, string>();
   for (const g of existing ?? []) {
@@ -159,113 +185,164 @@ export async function commitImport(formData: FormData): Promise<void> {
     .maybeSingle();
   if (!imp || imp.status !== "previewed") return;
 
-  const { data: rows } = await supabase
-    .from("guest_import_rows")
-    .select("id, row_number, mapped, action, matched_guest_id")
-    .eq("import_id", importId)
-    .in("action", ["create", "update"])
-    .order("row_number");
+  // All create/update rows, paginated past the 1000-row cap.
+  const rows = await fetchAllRows<{
+    row_number: number;
+    mapped: Json;
+    matched_guest_id: string | null;
+  }>((f, t) =>
+    supabase
+      .from("guest_import_rows")
+      .select("row_number, mapped, matched_guest_id")
+      .eq("import_id", importId)
+      .in("action", ["create", "update"])
+      .order("row_number")
+      .range(f, t),
+  );
 
-  let created = 0,
-    updated = 0;
+  // Full existing base for dedup (email + phone-digits → id).
+  const existing = await fetchAllRows<{
+    id: string;
+    email: string | null;
+    phone: string | null;
+  }>((f, t) =>
+    supabase
+      .from("guests")
+      .select("id, email, phone")
+      .eq("restaurant_id", member.restaurantId)
+      .range(f, t),
+  );
+  const byEmail = new Map<string, string>();
+  const byPhone = new Map<string, string>();
+  for (const g of existing) {
+    if (g.email) byEmail.set(g.email.toLowerCase(), g.id);
+    const pk = g.phone ? phoneKey(g.phone) : null;
+    if (pk) byPhone.set(pk, g.id);
+  }
+
+  const meta = (m: MappedGuest) => ({
+    country: m.country,
+    imported_visits: m.visits,
+    imported_last_visit: m.last_visit,
+    imported_segment: m.segment,
+    imported_notes: m.notes,
+  });
+
+  // Partition rows into creates vs updates (dedup within the run + against the
+  // full base), then apply in batches — no per-row round-trips, so it scales to
+  // tens of thousands of rows without capping or timing out.
+  const seenEmail = new Set<string>();
+  const seenPhone = new Set<string>();
   const phoneErrors: string[] = [];
+  type Pending = { m: MappedGuest; ph: ReturnType<typeof normalizePhone> };
+  const toCreate: Pending[] = [];
+  const toUpdate: ({ id: string } & Pending)[] = [];
 
-  for (const r of rows ?? []) {
+  for (const r of rows) {
     const m = r.mapped as unknown as MappedGuest;
-
-    // Normalize the phone to E.164. Infer the region from the row's country
-    // column when present, else default AR. Log numbers we can't normalize.
     const region = countryNameToIso(m.country) ?? "AR";
     const ph = normalizePhone(m.phone, region);
     if (m.phone && !ph.phone_normalized)
       phoneErrors.push(`Fila ${r.row_number}: "${m.phone}" no se pudo normalizar.`);
 
-    // Re-resolve by email at commit to avoid creating a duplicate of a guest
-    // added since preview. Phone matches are already in matched_guest_id (the
-    // preview normalizes phone digits; a raw ilike can't match formatted phones).
-    let guestId = r.matched_guest_id as string | null;
-    if (!guestId && m.email) {
-      const { data: hit } = await supabase
-        .from("guests")
-        .select("id")
-        .eq("restaurant_id", member.restaurantId)
-        .ilike("email", m.email)
-        .limit(1)
-        .maybeSingle();
-      guestId = hit?.id ?? null;
-    }
+    const emailKey = m.email ? m.email.toLowerCase() : null;
+    const pk = m.phone ? phoneKey(m.phone) : null;
+    if ((emailKey && seenEmail.has(emailKey)) || (pk && seenPhone.has(pk))) continue;
+    if (emailKey) seenEmail.add(emailKey);
+    if (pk) seenPhone.add(pk);
 
-    // Preserve everything from the source system (architecture-first).
-    const importMeta = {
-      country: m.country,
-      imported_visits: m.visits,
-      imported_last_visit: m.last_visit,
-      imported_segment: m.segment,
-      imported_notes: m.notes,
-    };
+    const matchId =
+      (emailKey && byEmail.get(emailKey)) ||
+      (pk && byPhone.get(pk)) ||
+      r.matched_guest_id ||
+      null;
+    if (matchId) toUpdate.push({ id: matchId, m, ph });
+    else toCreate.push({ m, ph });
+  }
 
-    if (guestId) {
-      // Merge: fill missing identity fields, merge metadata.
-      const { data: g } = await supabase
-        .from("guests")
-        .select("name, email, phone, phone_normalized, country_code, birth_date, metadata")
-        .eq("id", guestId)
-        .single();
-      await supabase
-        .from("guests")
-        .update({
-          name: g?.name ?? m.name,
-          email: g?.email ?? m.email,
-          phone: g?.phone ?? ph.phone_raw,
-          phone_normalized: g?.phone_normalized ?? ph.phone_normalized,
-          country_code: g?.country_code ?? ph.country_code,
-          birth_date: g?.birth_date ?? m.birth_date,
-          metadata: {
-            ...((g?.metadata as Record<string, unknown>) ?? {}),
-            ...importMeta,
-          },
-        })
-        .eq("id", guestId);
-      updated++;
-    } else {
-      const { data: ng } = await supabase
-        .from("guests")
-        .insert({
+  let created = 0;
+  let updated = 0;
+
+  // CREATE in chunks; attach notes/tags to the freshly-inserted ids.
+  for (let i = 0; i < toCreate.length; i += 500) {
+    const chunk = toCreate.slice(i, i + 500);
+    const { data: ins } = await supabase
+      .from("guests")
+      .insert(
+        chunk.map((c) => ({
           restaurant_id: member.restaurantId,
-          name: m.name,
-          email: m.email,
-          phone: ph.phone_raw,
-          phone_normalized: ph.phone_normalized,
-          country_code: ph.country_code,
-          birth_date: m.birth_date,
-          source: "import",
-          metadata: importMeta as Json,
-        })
-        .select("id")
-        .single();
-      guestId = ng?.id ?? null;
-      created++;
-    }
+          name: c.m.name,
+          email: c.m.email,
+          phone: c.ph.phone_raw,
+          phone_normalized: c.ph.phone_normalized,
+          country_code: c.ph.country_code,
+          birth_date: c.m.birth_date,
+          source: "import" as const,
+          metadata: meta(c.m) as Json,
+        })),
+      )
+      .select("id");
+    created += ins?.length ?? 0;
 
-    if (!guestId) continue;
-    if (m.notes)
-      await supabase.from("guest_notes").insert({
-        guest_id: guestId,
-        restaurant_id: member.restaurantId,
-        body: m.notes,
-        created_by: member.userId,
-      });
-    for (const tag of m.tags)
-      await supabase
-        .from("guest_tags")
-        .insert({
-          guest_id: guestId,
-          restaurant_id: member.restaurantId,
-          tag,
-          created_by: member.userId,
-        })
-        .select("id")
-        .maybeSingle();
+    const notes: { guest_id: string; restaurant_id: string; body: string; created_by: string }[] = [];
+    const tags: { guest_id: string; restaurant_id: string; tag: string; created_by: string }[] = [];
+    (ins ?? []).forEach((g, idx) => {
+      const c = chunk[idx];
+      if (c.m.notes)
+        notes.push({ guest_id: g.id, restaurant_id: member.restaurantId, body: c.m.notes, created_by: member.userId });
+      for (const tag of c.m.tags)
+        tags.push({ guest_id: g.id, restaurant_id: member.restaurantId, tag, created_by: member.userId });
+    });
+    if (notes.length) await supabase.from("guest_notes").insert(notes);
+    if (tags.length) await supabase.from("guest_tags").insert(tags);
+  }
+
+  // UPDATE: bulk-fetch matched guests, merge (fill missing), upsert in chunks.
+  const updateIds = [...new Set(toUpdate.map((u) => u.id))];
+  const existingById = new Map<
+    string,
+    {
+      id: string;
+      name: string | null;
+      email: string | null;
+      phone: string | null;
+      phone_normalized: string | null;
+      country_code: string | null;
+      birth_date: string | null;
+      metadata: Json | null;
+    }
+  >();
+  for (let i = 0; i < updateIds.length; i += 500) {
+    const { data } = await supabase
+      .from("guests")
+      .select("id, name, email, phone, phone_normalized, country_code, birth_date, metadata")
+      .in("id", updateIds.slice(i, i + 500));
+    for (const g of data ?? []) existingById.set(g.id, g);
+  }
+  const upserts: Record<string, unknown>[] = [];
+  const mergedAlready = new Set<string>();
+  for (const u of toUpdate) {
+    if (mergedAlready.has(u.id)) continue; // one merge per existing guest
+    mergedAlready.add(u.id);
+    const g = existingById.get(u.id);
+    if (!g) continue;
+    upserts.push({
+      id: u.id,
+      restaurant_id: member.restaurantId,
+      name: g.name ?? u.m.name,
+      email: g.email ?? u.m.email,
+      phone: g.phone ?? u.ph.phone_raw,
+      phone_normalized: g.phone_normalized ?? u.ph.phone_normalized,
+      country_code: g.country_code ?? u.ph.country_code,
+      birth_date: g.birth_date ?? u.m.birth_date,
+      metadata: { ...((g.metadata as Record<string, unknown>) ?? {}), ...meta(u.m) },
+    });
+  }
+  for (let i = 0; i < upserts.length; i += 500) {
+    await supabase
+      .from("guests")
+      .upsert(upserts.slice(i, i + 500) as never, { onConflict: "id" });
+    updated += Math.min(500, upserts.length - i);
   }
 
   await supabase
