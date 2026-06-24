@@ -80,3 +80,40 @@ export function getEmailProvider(): EmailProvider {
 }
 
 export const EMAIL_NOT_CONFIGURED = NOT_CONFIGURED;
+
+// -----------------------------------------------------------------------------
+// Feature flags — single place to read activation state from the environment.
+// The whole app flips to real sending the moment these env vars are present.
+// -----------------------------------------------------------------------------
+export type EmailFlags = {
+  hasApiKey: boolean;
+  hasWebhookSecret: boolean;
+  provider: "resend" | "mock";
+};
+
+export function emailFlags(): EmailFlags {
+  const hasApiKey = !!process.env.RESEND_API_KEY;
+  return {
+    hasApiKey,
+    hasWebhookSecret: !!process.env.RESEND_WEBHOOK_SECRET,
+    provider: hasApiKey ? "resend" : "mock",
+  };
+}
+
+export type ResendDomain = { name: string; status: string };
+
+/** Best-effort: list verified domains from Resend (for sender validation). */
+export async function resendListDomains(): Promise<ResendDomain[] | null> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch("https://api.resend.com/domains", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { data?: ResendDomain[] };
+    return data.data ?? [];
+  } catch {
+    return null;
+  }
+}

@@ -49,7 +49,12 @@ export type ImportStatus = "previewed" | "completed" | "failed";
 export type ImportRowAction = "create" | "update" | "skip" | "invalid";
 
 export type EmailTemplateStatus = "draft" | "active" | "archived";
-export type EmailLogStatus = "pending" | "sent" | "failed" | "skipped";
+export type EmailLogStatus =
+  | "pending"
+  | "processing"
+  | "sent"
+  | "failed"
+  | "skipped";
 export type EmailEventType =
   | "sent"
   | "delivered"
@@ -672,6 +677,8 @@ export interface Database {
           status: EmailLogStatus;
           provider_message_id: string | null;
           error_message: string | null;
+          retry_count: number;
+          last_attempt_at: string | null;
           sent_at: string | null;
           created_at: string;
         };
@@ -685,6 +692,8 @@ export interface Database {
           status?: EmailLogStatus;
           provider_message_id?: string | null;
           error_message?: string | null;
+          retry_count?: number;
+          last_attempt_at?: string | null;
           sent_at?: string | null;
           created_at?: string;
         };

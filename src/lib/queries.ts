@@ -1831,3 +1831,32 @@ export async function getIntelligence(
     totalEstimatedRevenue: sent.reduce((n, c) => n + c.estimated_revenue, 0),
   };
 }
+
+// ===========================================================================
+// Sprint 8A — Email activation: recent logs for the readiness console
+// ===========================================================================
+
+export type EmailLogRow = {
+  id: string;
+  recipient_email: string;
+  subject: string;
+  status: string;
+  provider_message_id: string | null;
+  error_message: string | null;
+  retry_count: number;
+  created_at: string;
+};
+
+export async function getRecentEmailLogs(
+  restaurantId: string,
+  limit = 15,
+): Promise<EmailLogRow[]> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("email_logs")
+    .select("id, recipient_email, subject, status, provider_message_id, error_message, retry_count, created_at")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return data ?? [];
+}

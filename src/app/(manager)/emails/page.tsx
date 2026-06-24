@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Card } from "@/components/ui/card";
@@ -35,12 +36,20 @@ export default async function EmailsPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-dark">Emails</h1>
-        <p className="mt-1 text-sm text-muted">
-          Infraestructura de comunicación. Creá y gestioná templates; las
-          campañas llegan más adelante.
-        </p>
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-dark">Emails</h1>
+          <p className="mt-1 text-sm text-muted">
+            Infraestructura de comunicación. Creá y gestioná templates; las
+            campañas llegan más adelante.
+          </p>
+        </div>
+        <Link
+          href="/emails/activacion"
+          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-dark hover:bg-background"
+        >
+          Activación & salud →
+        </Link>
       </header>
 
       {/* Provider + config status */}

@@ -12,6 +12,7 @@ function isPublicPath(pathname: string) {
     // public wallet pass view, but /w/.../v (claim validation) requires auth
     (pathname.startsWith("/w/") && !pathname.endsWith("/v")) ||
     pathname.startsWith("/api/wallet/") || // wallet provider endpoints
+    pathname.startsWith("/api/webhooks/") || // provider webhooks (signed)
     pathname.startsWith("/auth")
   );
 }

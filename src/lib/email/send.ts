@@ -126,6 +126,13 @@ async function dispatch(
     ? `${params.settings.sender_name} <${params.settings.sender_email}>`
     : params.settings.sender_email;
 
+  // In-flight: pending → processing (lifecycle is observable even mid-send).
+  if (logId)
+    await supabase
+      .from("email_logs")
+      .update({ status: "processing", last_attempt_at: new Date().toISOString() })
+      .eq("id", logId);
+
   const result = await provider.send({
     from,
     to: params.to,
@@ -237,4 +244,68 @@ export async function sendTestEmail(params: {
   });
 
   return outcome;
+}
+
+/**
+ * Retry a failed send on the SAME email_log (lifecycle: failed → processing →
+ * sent | failed, retry_count++). Re-resolves the body from the template; logs
+ * without a template can't be retried (no stored body).
+ */
+export async function retryEmail(
+  restaurantId: string,
+  logId: string,
+): Promise<SendOutcome> {
+  const supabase = createAdminClient();
+  const { data: log } = await supabase
+    .from("email_logs")
+    .select("id, recipient_email, subject, template_id, status, retry_count, guest_id")
+    .eq("id", logId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!log) return { status: "failed", logId: null, error: "Log inexistente", providerConfigured: false };
+  if (log.status !== "failed")
+    return { status: log.status, logId, error: "Sólo se reintentan envíos fallidos.", providerConfigured: true };
+  if (!log.template_id)
+    return { status: "failed", logId, error: "Sin plantilla: no hay cuerpo para reintentar.", providerConfigured: true };
+
+  const settings = await loadSettings(supabase, restaurantId);
+  const provider = getEmailProvider();
+  const { data: tpl } = await supabase
+    .from("email_templates")
+    .select("subject, body")
+    .eq("id", log.template_id)
+    .maybeSingle();
+
+  await supabase
+    .from("email_logs")
+    .update({
+      status: "processing",
+      retry_count: (log.retry_count ?? 0) + 1,
+      last_attempt_at: new Date().toISOString(),
+    })
+    .eq("id", logId);
+
+  if (!provider.configured || !settings.sender_email) {
+    const error = !provider.configured ? EMAIL_NOT_CONFIGURED : "Falta el remitente.";
+    await finalize(supabase, logId, { status: "skipped", error_message: error });
+    return { status: "skipped", logId, error, providerConfigured: provider.configured };
+  }
+
+  const from = settings.sender_name
+    ? `${settings.sender_name} <${settings.sender_email}>`
+    : settings.sender_email;
+  const result = await provider.send({
+    from,
+    to: log.recipient_email,
+    subject: tpl?.subject ?? log.subject,
+    html: tpl?.body ?? "",
+    replyTo: settings.reply_to_email,
+  });
+
+  if (result.ok) {
+    await finalize(supabase, logId, { status: "sent", provider_message_id: result.messageId ?? null });
+    return { status: "sent", logId, providerConfigured: true };
+  }
+  await finalize(supabase, logId, { status: "failed", error_message: result.error });
+  return { status: "failed", logId, error: result.error, providerConfigured: true };
 }
