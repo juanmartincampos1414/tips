@@ -5,7 +5,12 @@ import { addGuestNote, addGuestTag, removeGuestTag } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { getGuestProfile, getGuestTimeline } from "@/lib/queries";
+import {
+  getGuestCommunications,
+  getGuestProfile,
+  getGuestTimeline,
+} from "@/lib/queries";
+import { CHANNEL_LABEL, CONVERSION_LABEL } from "@/lib/campaigns";
 import { formatPhone } from "@/lib/phone";
 import {
   computeScore,
@@ -44,6 +49,7 @@ export default async function GuestProfilePage({
   const segment = computeSegment(stats);
   const score = computeScore(stats);
   const timeline = await getGuestTimeline(id);
+  const communications = await getGuestCommunications(id);
 
   const statCards = [
     { label: "Recognition events", value: stats.recognitionEvents },
@@ -135,6 +141,43 @@ export default async function GuestProfilePage({
         <Info label="Último staff" value={lastStaffName ?? "—"} />
         <Info label="Novedades" value={guest.marketing_consent ? "Sí" : "No"} />
       </div>
+
+      {/* Communications (Sprint 7.5) */}
+      <section className="mb-6">
+        <h2 className="mb-2 text-sm font-semibold text-dark">Comunicaciones</h2>
+        <Card className="p-0">
+          {communications.length === 0 ? (
+            <p className="p-5 text-sm text-muted">
+              Este cliente todavía no recibió campañas.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {communications.map((cm) => (
+                <li key={cm.campaignId} className="flex items-start justify-between gap-3 px-5 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-dark">
+                      {cm.name}{" "}
+                      <span className="text-xs font-normal text-muted">
+                        · {CHANNEL_LABEL[cm.channel]}
+                      </span>
+                    </p>
+                    <p className="text-xs text-muted">
+                      {cm.status}
+                      {cm.conversions.length > 0
+                        ? " → " +
+                          cm.conversions.map((c) => CONVERSION_LABEL[c]).join(", ")
+                        : ""}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted">
+                    {cm.sentAt ? dateFmt(cm.sentAt) : "—"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Tags + Notes */}

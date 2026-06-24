@@ -58,6 +58,26 @@ export type EmailEventType =
   | "bounced"
   | "complained";
 
+export type CampaignChannel = "email" | "whatsapp";
+export type CampaignStatus =
+  | "draft"
+  | "scheduled"
+  | "sending"
+  | "completed"
+  | "archived";
+export type CampaignRecipientStatus =
+  | "pending"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "failed"
+  | "skipped";
+export type ConversionType =
+  | "reward_claim"
+  | "return_visit"
+  | "review"
+  | "recognition";
+
 export type Json =
   | string
   | number
@@ -271,6 +291,8 @@ export interface Database {
           last_staff_id: string | null;
           birth_date: string | null;
           metadata: Json | null;
+          last_campaign_id: string | null;
+          last_campaign_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -287,6 +309,8 @@ export interface Database {
           last_staff_id?: string | null;
           birth_date?: string | null;
           metadata?: Json | null;
+          last_campaign_id?: string | null;
+          last_campaign_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -687,6 +711,120 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["email_events"]["Insert"]>;
+        Relationships: [];
+      };
+      campaigns: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          name: string;
+          description: string | null;
+          channel: CampaignChannel;
+          segment: string;
+          template_id: string | null;
+          status: CampaignStatus;
+          attribution_window_days: number;
+          audience_count: number;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+          sent_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          name: string;
+          description?: string | null;
+          channel?: CampaignChannel;
+          segment: string;
+          template_id?: string | null;
+          status?: CampaignStatus;
+          attribution_window_days?: number;
+          audience_count?: number;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          sent_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["campaigns"]["Insert"]>;
+        Relationships: [];
+      };
+      campaign_audiences: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          guest_id: string;
+          segment_snapshot: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          campaign_id: string;
+          guest_id: string;
+          segment_snapshot?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["campaign_audiences"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      campaign_recipients: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          guest_id: string;
+          channel: CampaignChannel;
+          status: CampaignRecipientStatus;
+          email_log_id: string | null;
+          reason: string | null;
+          delivered_at: string | null;
+          opened_at: string | null;
+          clicked_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          campaign_id: string;
+          guest_id: string;
+          channel?: CampaignChannel;
+          status?: CampaignRecipientStatus;
+          email_log_id?: string | null;
+          reason?: string | null;
+          delivered_at?: string | null;
+          opened_at?: string | null;
+          clicked_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["campaign_recipients"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      campaign_conversions: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          campaign_id: string;
+          guest_id: string;
+          conversion_type: ConversionType;
+          conversion_date: string;
+          source_event_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          campaign_id: string;
+          guest_id: string;
+          conversion_type: ConversionType;
+          conversion_date: string;
+          source_event_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["campaign_conversions"]["Insert"]
+        >;
         Relationships: [];
       };
       nfc_inventory: {

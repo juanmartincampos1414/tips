@@ -94,11 +94,13 @@ export async function GET(
     headers = [
       "Camarero", "Recognition events", "Rating promedio", "Reviews",
       "Guests capturados", "Rewards emitidas", "Rewards reclamadas", "Return visits",
+      "Clientes recuperados",
     ];
     rows = impact.map((s) => [
       s.name, s.recognitionEvents,
       s.avgRating != null ? s.avgRating.toFixed(2) : "",
       s.reviews, s.guestsCaptured, s.rewardsIssued, s.rewardsClaimed, s.returnVisits,
+      s.recoveredGuests,
     ]);
   } else {
     return new NextResponse("Tipo inválido", { status: 400 });

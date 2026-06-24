@@ -7,7 +7,15 @@ import {
   formatPhone,
   type PreferredChannel,
 } from "@/lib/phone";
-import type { Database } from "@/lib/database.types";
+import {
+  computeCampaignKpis,
+  type CampaignKpis,
+} from "@/lib/campaigns";
+import type {
+  CampaignChannel,
+  ConversionType,
+  Database,
+} from "@/lib/database.types";
 
 type Restaurant = Database["public"]["Tables"]["restaurants"]["Row"];
 type Staff = Database["public"]["Tables"]["staff"]["Row"];
@@ -1059,11 +1067,13 @@ export type StaffImpactRow = {
   rewardsIssued: number;
   rewardsClaimed: number;
   returnVisits: number;
+  recoveredGuests: number;
 };
 
 export async function getStaffImpact(
   restaurantId: string,
 ): Promise<StaffImpactRow[]> {
+  await syncCampaignConversions(restaurantId);
   const supabase = createAdminClient();
   const [
     { data: staff },
@@ -1073,6 +1083,7 @@ export async function getStaffImpact(
     { data: guests },
     { data: rewards },
     { data: returns },
+    { data: campReturns },
   ] = await Promise.all([
     supabase
       .from("staff")
@@ -1094,6 +1105,11 @@ export async function getStaffImpact(
       .eq("restaurant_id", restaurantId),
     supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId),
     supabase.from("return_visits").select("guest_id").eq("restaurant_id", restaurantId),
+    supabase
+      .from("campaign_conversions")
+      .select("guest_id")
+      .eq("restaurant_id", restaurantId)
+      .eq("conversion_type", "return_visit"),
   ]);
 
   const ratingById = new Map((ratings ?? []).map((r) => [r.id, r.rating]));
@@ -1138,6 +1154,15 @@ export async function getStaffImpact(
     const s = guestStaff.get(v.guest_id);
     if (s) retCount.set(s, (retCount.get(s) ?? 0) + 1);
   }
+  // Recovered guests: distinct guests with a campaign-attributed return visit,
+  // credited to the staff that owns the guest (last_staff_id).
+  const recoveredByStaff = new Map<string, Set<string>>();
+  for (const cv of campReturns ?? []) {
+    const s = guestStaff.get(cv.guest_id);
+    if (!s) continue;
+    if (!recoveredByStaff.has(s)) recoveredByStaff.set(s, new Set());
+    recoveredByStaff.get(s)!.add(cv.guest_id);
+  }
 
   return ((staff as { id: string; name: string }[] | null) ?? []).map((s) => ({
     id: s.id,
@@ -1149,6 +1174,7 @@ export async function getStaffImpact(
     rewardsIssued: rIssued.get(s.id) ?? 0,
     rewardsClaimed: rClaimed.get(s.id) ?? 0,
     returnVisits: retCount.get(s.id) ?? 0,
+    recoveredGuests: recoveredByStaff.get(s.id)?.size ?? 0,
   }));
 }
 
@@ -1178,4 +1204,410 @@ export async function getDashboardStats(
     totalStaff: staffCount ?? 0,
     totalVisits: visitCount ?? 0,
   };
+}
+
+// ===========================================================================
+// Sprint 7.5 — Campaign Builder Foundation
+// ===========================================================================
+
+export type Campaign = Database["public"]["Tables"]["campaigns"]["Row"];
+
+type DatedEvent = {
+  guest_id: string;
+  type: ConversionType;
+  date: string;
+  source_event_id: string;
+};
+
+/**
+ * Attribution engine. For every completed campaign, attribute each audience
+ * guest's reward-claim / return-visit / review / recognition events that fall
+ * inside the campaign window into campaign_conversions. Idempotent (unique
+ * constraint) — runs lazily on read, no cron.
+ */
+export async function syncCampaignConversions(
+  restaurantId: string,
+): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: campaigns } = await supabase
+    .from("campaigns")
+    .select("id, sent_at, attribution_window_days")
+    .eq("restaurant_id", restaurantId)
+    .eq("status", "completed")
+    .not("sent_at", "is", null);
+  if (!campaigns || campaigns.length === 0) return;
+
+  const [{ data: aud }, { data: claims }, { data: returns }, { data: recs }, { data: reviews }] =
+    await Promise.all([
+      supabase
+        .from("campaign_audiences")
+        .select("campaign_id, guest_id")
+        .in("campaign_id", campaigns.map((c) => c.id)),
+      supabase
+        .from("reward_claims")
+        .select("id, guest_id, claimed_at")
+        .eq("restaurant_id", restaurantId),
+      supabase
+        .from("return_visits")
+        .select("id, guest_id, created_at")
+        .eq("restaurant_id", restaurantId),
+      supabase
+        .from("recognition_events")
+        .select("id, guest_id, created_at")
+        .eq("restaurant_id", restaurantId)
+        .not("guest_id", "is", null),
+      supabase
+        .from("review_requests")
+        .select("id, recognition_event_id, completed_at, status")
+        .eq("restaurant_id", restaurantId)
+        .eq("status", "completed"),
+    ]);
+
+  // Map recognition event id -> guest id (for review attribution).
+  const recGuest = new Map<string, string>();
+  for (const r of recs ?? []) if (r.guest_id) recGuest.set(r.id, r.guest_id);
+
+  // All dated events grouped by guest.
+  const byGuest = new Map<string, DatedEvent[]>();
+  const push = (e: DatedEvent) => {
+    byGuest.set(e.guest_id, [...(byGuest.get(e.guest_id) ?? []), e]);
+  };
+  for (const c of claims ?? [])
+    push({ guest_id: c.guest_id, type: "reward_claim", date: c.claimed_at, source_event_id: c.id });
+  for (const v of returns ?? [])
+    push({ guest_id: v.guest_id, type: "return_visit", date: v.created_at, source_event_id: v.id });
+  for (const r of recs ?? [])
+    if (r.guest_id)
+      push({ guest_id: r.guest_id, type: "recognition", date: r.created_at, source_event_id: r.id });
+  for (const rv of reviews ?? []) {
+    const gid = recGuest.get(rv.recognition_event_id);
+    if (gid && rv.completed_at)
+      push({ guest_id: gid, type: "review", date: rv.completed_at, source_event_id: rv.id });
+  }
+
+  const audByCampaign = new Map<string, string[]>();
+  for (const a of aud ?? [])
+    audByCampaign.set(a.campaign_id, [...(audByCampaign.get(a.campaign_id) ?? []), a.guest_id]);
+
+  const rows: Database["public"]["Tables"]["campaign_conversions"]["Insert"][] = [];
+  for (const c of campaigns) {
+    if (!c.sent_at) continue;
+    const start = new Date(c.sent_at).getTime();
+    const end = start + c.attribution_window_days * 86400_000;
+    for (const guestId of audByCampaign.get(c.id) ?? []) {
+      for (const e of byGuest.get(guestId) ?? []) {
+        const t = new Date(e.date).getTime();
+        if (t >= start && t <= end)
+          rows.push({
+            restaurant_id: restaurantId,
+            campaign_id: c.id,
+            guest_id: guestId,
+            conversion_type: e.type,
+            conversion_date: e.date,
+            source_event_id: e.source_event_id,
+          });
+      }
+    }
+  }
+  if (rows.length)
+    await supabase
+      .from("campaign_conversions")
+      .upsert(rows, {
+        onConflict: "campaign_id,guest_id,conversion_type,source_event_id",
+        ignoreDuplicates: true,
+      });
+}
+
+export type CampaignListItem = Campaign & {
+  templateName: string | null;
+  kpis: CampaignKpis;
+};
+
+export type ChannelPerf = {
+  channel: CampaignChannel;
+  campaigns: number;
+  audience: number;
+  conversions: number;
+  conversionRate: number | null;
+};
+
+export type TemplatePerf = {
+  templateId: string;
+  name: string;
+  campaigns: number;
+  audience: number;
+  conversions: number;
+  conversionRate: number | null;
+};
+
+export type CampaignIntelligence = {
+  campaignsSent: number;
+  guestsImpacted: number;
+  rewardClaims: number;
+  returnVisits: number;
+  conversions: number;
+  conversionRate: number | null;
+  bestSegment: string | null;
+  bestChannel: CampaignChannel | null;
+  bestTemplate: string | null;
+  channelPerf: ChannelPerf[];
+  templatePerf: TemplatePerf[];
+};
+
+export async function getCampaigns(
+  restaurantId: string,
+): Promise<{ campaigns: CampaignListItem[]; intelligence: CampaignIntelligence }> {
+  await syncCampaignConversions(restaurantId);
+  const supabase = createAdminClient();
+  const [{ data: rows }, { data: templates }, { data: recipients }, { data: conversions }, { data: audiences }] =
+    await Promise.all([
+      supabase
+        .from("campaigns")
+        .select("*")
+        .eq("restaurant_id", restaurantId)
+        .order("created_at", { ascending: false }),
+      supabase.from("email_templates").select("id, name").eq("restaurant_id", restaurantId),
+      supabase.from("campaign_recipients").select("campaign_id, status"),
+      supabase
+        .from("campaign_conversions")
+        .select("campaign_id, guest_id, conversion_type")
+        .eq("restaurant_id", restaurantId),
+      supabase.from("campaign_audiences").select("campaign_id, guest_id"),
+    ]);
+
+  const tplName = new Map((templates ?? []).map((t) => [t.id, t.name]));
+  const recByCampaign = new Map<string, { status: string }[]>();
+  for (const r of recipients ?? [])
+    recByCampaign.set(r.campaign_id, [...(recByCampaign.get(r.campaign_id) ?? []), r]);
+  const convByCampaign = new Map<string, { guest_id: string; conversion_type: ConversionType }[]>();
+  for (const c of conversions ?? [])
+    convByCampaign.set(c.campaign_id, [...(convByCampaign.get(c.campaign_id) ?? []), c]);
+
+  const list: CampaignListItem[] = (rows ?? []).map((c) => ({
+    ...c,
+    templateName: c.template_id ? tplName.get(c.template_id) ?? null : null,
+    kpis: computeCampaignKpis(
+      c.audience_count,
+      recByCampaign.get(c.id) ?? [],
+      convByCampaign.get(c.id) ?? [],
+    ),
+  }));
+
+  // ---- Intelligence rollups (over sent campaigns) ----
+  const sent = list.filter((c) => c.status === "completed");
+  const impacted = new Set((audiences ?? []).map((a) => a.guest_id)).size;
+  const convertingGuests = new Set((conversions ?? []).map((c) => c.guest_id)).size;
+  const totalAudience = sent.reduce((n, c) => n + c.audience_count, 0);
+
+  const channelMap = new Map<CampaignChannel, ChannelPerf>();
+  const templateMap = new Map<string, TemplatePerf>();
+  let bestSegment: string | null = null;
+  let bestSegmentRate = -1;
+  for (const c of sent) {
+    const conv = c.kpis.conversions;
+    // channel
+    const ch = channelMap.get(c.channel) ?? {
+      channel: c.channel,
+      campaigns: 0,
+      audience: 0,
+      conversions: 0,
+      conversionRate: null,
+    };
+    ch.campaigns++;
+    ch.audience += c.audience_count;
+    ch.conversions += conv;
+    channelMap.set(c.channel, ch);
+    // template
+    if (c.template_id) {
+      const tp = templateMap.get(c.template_id) ?? {
+        templateId: c.template_id,
+        name: c.templateName ?? "—",
+        campaigns: 0,
+        audience: 0,
+        conversions: 0,
+        conversionRate: null,
+      };
+      tp.campaigns++;
+      tp.audience += c.audience_count;
+      tp.conversions += conv;
+      templateMap.set(c.template_id, tp);
+    }
+    // best segment by campaign conversion rate
+    if (c.kpis.conversionRate != null && c.kpis.conversionRate > bestSegmentRate) {
+      bestSegmentRate = c.kpis.conversionRate;
+      bestSegment = c.segment;
+    }
+  }
+  const channelPerf = [...channelMap.values()].map((c) => ({
+    ...c,
+    conversionRate: c.audience ? c.conversions / c.audience : null,
+  }));
+  const templatePerf = [...templateMap.values()].map((t) => ({
+    ...t,
+    conversionRate: t.audience ? t.conversions / t.audience : null,
+  }));
+  const bestChannel =
+    channelPerf.slice().sort((a, b) => (b.conversionRate ?? 0) - (a.conversionRate ?? 0))[0]?.channel ?? null;
+  const bestTemplate =
+    templatePerf.slice().sort((a, b) => (b.conversionRate ?? 0) - (a.conversionRate ?? 0))[0]?.name ?? null;
+
+  return {
+    campaigns: list,
+    intelligence: {
+      campaignsSent: sent.length,
+      guestsImpacted: impacted,
+      rewardClaims: sent.reduce((n, c) => n + c.kpis.rewardClaims, 0),
+      returnVisits: sent.reduce((n, c) => n + c.kpis.returnVisits, 0),
+      conversions: convertingGuests,
+      conversionRate: totalAudience ? convertingGuests / totalAudience : null,
+      bestSegment,
+      bestChannel,
+      bestTemplate,
+      channelPerf,
+      templatePerf,
+    },
+  };
+}
+
+export type CampaignRecipientRow = {
+  guestId: string;
+  name: string | null;
+  email: string | null;
+  status: string;
+  reason: string | null;
+};
+
+export type CampaignConversionRow = {
+  guestId: string;
+  name: string | null;
+  type: ConversionType;
+  date: string;
+};
+
+export type CampaignDetail = {
+  campaign: Campaign;
+  templateName: string | null;
+  kpis: CampaignKpis;
+  recipients: CampaignRecipientRow[];
+  conversions: CampaignConversionRow[];
+};
+
+export async function getCampaign(
+  restaurantId: string,
+  campaignId: string,
+): Promise<CampaignDetail | null> {
+  await syncCampaignConversions(restaurantId);
+  const supabase = createAdminClient();
+  const { data: campaign } = await supabase
+    .from("campaigns")
+    .select("*")
+    .eq("id", campaignId)
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+  if (!campaign) return null;
+
+  const [{ data: recs }, { data: convs }, tpl] = await Promise.all([
+    supabase
+      .from("campaign_recipients")
+      .select("guest_id, status, reason, guests(name, email)")
+      .eq("campaign_id", campaignId),
+    supabase
+      .from("campaign_conversions")
+      .select("guest_id, conversion_type, conversion_date, guests(name)")
+      .eq("campaign_id", campaignId)
+      .order("conversion_date", { ascending: false }),
+    campaign.template_id
+      ? supabase.from("email_templates").select("name").eq("id", campaign.template_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const recipients: CampaignRecipientRow[] = (
+    (recs as unknown as {
+      guest_id: string;
+      status: string;
+      reason: string | null;
+      guests: { name: string | null; email: string | null } | null;
+    }[]) ?? []
+  ).map((r) => ({
+    guestId: r.guest_id,
+    name: r.guests?.name ?? null,
+    email: r.guests?.email ?? null,
+    status: r.status,
+    reason: r.reason,
+  }));
+
+  const conversions: CampaignConversionRow[] = (
+    (convs as unknown as {
+      guest_id: string;
+      conversion_type: ConversionType;
+      conversion_date: string;
+      guests: { name: string | null } | null;
+    }[]) ?? []
+  ).map((c) => ({
+    guestId: c.guest_id,
+    name: c.guests?.name ?? null,
+    type: c.conversion_type,
+    date: c.conversion_date,
+  }));
+
+  return {
+    campaign,
+    templateName: (tpl?.data as { name: string } | null)?.name ?? null,
+    kpis: computeCampaignKpis(
+      campaign.audience_count,
+      recipients.map((r) => ({ status: r.status })),
+      conversions.map((c) => ({ guest_id: c.guestId, conversion_type: c.type })),
+    ),
+    recipients,
+    conversions,
+  };
+}
+
+export type GuestCommunication = {
+  campaignId: string;
+  name: string;
+  channel: CampaignChannel;
+  sentAt: string | null;
+  status: string;
+  conversions: ConversionType[];
+};
+
+export async function getGuestCommunications(
+  guestId: string,
+): Promise<GuestCommunication[]> {
+  const supabase = createAdminClient();
+  const { data: recs } = await supabase
+    .from("campaign_recipients")
+    .select("campaign_id, status, channel, campaigns(name, sent_at)")
+    .eq("guest_id", guestId);
+  if (!recs || recs.length === 0) return [];
+
+  const { data: convs } = await supabase
+    .from("campaign_conversions")
+    .select("campaign_id, conversion_type")
+    .eq("guest_id", guestId);
+  const convByCampaign = new Map<string, ConversionType[]>();
+  for (const c of convs ?? [])
+    convByCampaign.set(c.campaign_id, [
+      ...(convByCampaign.get(c.campaign_id) ?? []),
+      c.conversion_type,
+    ]);
+
+  return (
+    recs as unknown as {
+      campaign_id: string;
+      status: string;
+      channel: CampaignChannel;
+      campaigns: { name: string; sent_at: string | null } | null;
+    }[]
+  )
+    .map((r) => ({
+      campaignId: r.campaign_id,
+      name: r.campaigns?.name ?? "—",
+      channel: r.channel,
+      sentAt: r.campaigns?.sent_at ?? null,
+      status: r.status,
+      conversions: convByCampaign.get(r.campaign_id) ?? [],
+    }))
+    .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""));
 }

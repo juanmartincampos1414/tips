@@ -48,6 +48,7 @@ export default async function ImpactoPage() {
                 <th className="px-4 py-3 font-medium">Rew. emit.</th>
                 <th className="px-4 py-3 font-medium">Rew. recl.</th>
                 <th className="px-4 py-3 font-medium">Return visits</th>
+                <th className="px-4 py-3 font-medium">Recuperados</th>
               </tr>
             </thead>
             <tbody>
@@ -64,6 +65,9 @@ export default async function ImpactoPage() {
                   <td className="px-4 py-3 text-muted">{s.rewardsClaimed}</td>
                   <td className="px-4 py-3 font-medium text-dark">
                     {s.returnVisits}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-pink">
+                    {s.recoveredGuests}
                   </td>
                 </tr>
               ))}

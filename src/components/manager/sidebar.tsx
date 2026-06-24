@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,6 +13,7 @@ const NAV = [
   { href: "/staff", label: "Camareros", ownerOnly: false },
   { href: "/impacto", label: "Impacto", ownerOnly: false },
   { href: "/clientes", label: "Clientes", ownerOnly: false },
+  { href: "/campanas", label: "Campañas", ownerOnly: false },
   { href: "/importar", label: "Importar", ownerOnly: false },
   { href: "/recompensas", label: "Recompensas", ownerOnly: false },
   { href: "/nfc", label: "NFC", ownerOnly: false },
@@ -33,8 +35,15 @@ export function Sidebar({
   return (
     <aside className="flex w-full shrink-0 flex-col gap-6 border-border bg-card px-4 py-6 md:w-60 md:border-r">
       <div className="px-2">
-        <p className="text-lg font-bold text-pink">Tips</p>
-        <p className="mt-0.5 truncate text-xs text-muted">{restaurantName}</p>
+        <Image
+          src="/logo.png"
+          alt="Tips"
+          width={120}
+          height={80}
+          priority
+          className="h-auto w-24"
+        />
+        <p className="mt-1 truncate text-xs text-muted">{restaurantName}</p>
         <p className="mt-1 inline-block rounded-full bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
           {role}
         </p>
