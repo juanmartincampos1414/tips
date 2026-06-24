@@ -17,9 +17,6 @@ import {
 
 export type ImportState = { error?: string };
 
-// Vercel: large imports need more than the default 10s.
-export const maxDuration = 300;
-
 /** Fetch every row, paging past PostgREST's 1000-row cap. */
 async function fetchAllRows<T>(
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,

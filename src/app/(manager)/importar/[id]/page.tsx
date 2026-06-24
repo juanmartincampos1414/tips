@@ -12,6 +12,9 @@ import type { ImportRowAction } from "@/lib/database.types";
 
 import { commitImport } from "../actions";
 
+// Large commits process tens of thousands of rows in batches.
+export const maxDuration = 300;
+
 const ACTION: Record<ImportRowAction, { label: string; cls: string }> = {
   create: { label: "Nuevo", cls: "bg-success/10 text-success" },
   update: { label: "Actualizar", cls: "bg-pink/10 text-pink" },
