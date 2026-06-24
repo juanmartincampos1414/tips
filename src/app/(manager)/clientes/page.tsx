@@ -64,6 +64,10 @@ export default async function ClientesPage({
   const restaurant = (await getCurrentRestaurant())!;
   const { guests, kpis } = await getCrmData(restaurant.id);
   const filtered = applyFilters(guests, q, list);
+  // KPIs cover the whole base; the table renders a capped slice to keep the DOM
+  // light on large bases (use search/filters or CSV export for the rest).
+  const ROW_CAP = 250;
+  const shown = filtered.slice(0, ROW_CAP);
 
   const segKpis = [
     { label: "Total", value: kpis.total },
@@ -152,7 +156,7 @@ export default async function ClientesPage({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((g) => (
+              {shown.map((g) => (
                 <tr key={g.id} className="border-b border-border/60 last:border-0">
                   <td className="px-5 py-3">
                     <div className="font-medium text-dark">{g.name ?? "—"}</div>
@@ -199,7 +203,9 @@ export default async function ClientesPage({
             </tbody>
           </table>
           <p className="border-t border-border px-5 py-2 text-xs text-muted">
-            {filtered.length} de {guests.length} clientes
+            {filtered.length > ROW_CAP
+              ? `Mostrando ${ROW_CAP} de ${filtered.length} · refiná la búsqueda o exportá a CSV para ver todos`
+              : `${filtered.length} de ${guests.length} clientes`}
           </p>
         </Card>
       )}

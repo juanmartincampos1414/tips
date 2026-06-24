@@ -632,33 +632,59 @@ export type CrmKpis = {
   rewardRedemptionRate: number | null;
 };
 
+/**
+ * Fetch every row of a query, paging past PostgREST's 1000-row cap. `page`
+ * builds the range-limited query for each window. Without this, aggregations
+ * over large tables (e.g. a 6k-guest base) silently cap at 1000 → wrong KPIs.
+ */
+async function fetchAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
+): Promise<T[]> {
+  const size = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += size) {
+    const { data } = await page(from, from + size - 1);
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < size) break;
+  }
+  return out;
+}
+
 export async function getCrmData(
   restaurantId: string,
 ): Promise<{ guests: CrmGuest[]; kpis: CrmKpis }> {
   const { computeSegment } = await import("@/lib/segments");
   const supabase = createAdminClient();
-  const [
-    { data: guests },
-    { data: events },
-    { data: returns },
-    { data: rewards },
-    { data: tags },
-  ] = await Promise.all([
-    supabase
-      .from("guests")
-      .select("*, staff:last_staff_id(name)")
-      .eq("restaurant_id", restaurantId)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("recognition_events")
-      .select("guest_id, created_at")
-      .eq("restaurant_id", restaurantId),
-    supabase
-      .from("return_visits")
-      .select("guest_id, created_at")
-      .eq("restaurant_id", restaurantId),
-    supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId),
-    supabase.from("guest_tags").select("guest_id, tag").eq("restaurant_id", restaurantId),
+  const [guests, events, returns, rewards, tags] = await Promise.all([
+    fetchAllRows<Guest & { staff: { name: string } | null }>((f, t) =>
+      supabase
+        .from("guests")
+        .select("*, staff:last_staff_id(name)")
+        .eq("restaurant_id", restaurantId)
+        .order("created_at", { ascending: false })
+        .range(f, t),
+    ),
+    fetchAllRows<{ guest_id: string | null; created_at: string }>((f, t) =>
+      supabase
+        .from("recognition_events")
+        .select("guest_id, created_at")
+        .eq("restaurant_id", restaurantId)
+        .range(f, t),
+    ),
+    fetchAllRows<{ guest_id: string; created_at: string }>((f, t) =>
+      supabase
+        .from("return_visits")
+        .select("guest_id, created_at")
+        .eq("restaurant_id", restaurantId)
+        .range(f, t),
+    ),
+    fetchAllRows<{ guest_id: string; status: string }>((f, t) =>
+      supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId).range(f, t),
+    ),
+    fetchAllRows<{ guest_id: string; tag: string }>((f, t) =>
+      supabase.from("guest_tags").select("guest_id, tag").eq("restaurant_id", restaurantId).range(f, t),
+    ),
   ]);
 
   const eventsByGuest = new Map<string, number>();
@@ -1102,10 +1128,13 @@ export async function getStaffImpact(
       .from("review_requests")
       .select("recognition_event_id, route, status")
       .eq("restaurant_id", restaurantId),
-    supabase
-      .from("guests")
-      .select("id, last_staff_id")
-      .eq("restaurant_id", restaurantId),
+    fetchAllRows<{ id: string; last_staff_id: string | null }>((f, t) =>
+      supabase
+        .from("guests")
+        .select("id, last_staff_id")
+        .eq("restaurant_id", restaurantId)
+        .range(f, t),
+    ).then((data) => ({ data })),
     supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId),
     supabase.from("return_visits").select("guest_id").eq("restaurant_id", restaurantId),
     supabase
