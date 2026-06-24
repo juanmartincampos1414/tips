@@ -9,6 +9,9 @@ import {
 } from "@/lib/phone";
 import {
   computeCampaignKpis,
+  engagementScore,
+  estimateRevenue,
+  segmentLabel,
   type CampaignKpis,
 } from "@/lib/campaigns";
 import type {
@@ -1316,6 +1319,34 @@ export async function syncCampaignConversions(
         onConflict: "campaign_id,guest_id,conversion_type,source_event_id",
         ignoreDuplicates: true,
       });
+
+  // Materialize per-campaign value rollups (Sprint 7.6) from the final state.
+  const { data: allConv } = await supabase
+    .from("campaign_conversions")
+    .select("campaign_id, conversion_type")
+    .eq("restaurant_id", restaurantId);
+  const roll = new Map<string, { rewards: number; returns: number; recs: number }>();
+  for (const c of allConv ?? []) {
+    const r = roll.get(c.campaign_id) ?? { rewards: 0, returns: 0, recs: 0 };
+    if (c.conversion_type === "reward_claim") r.rewards++;
+    else if (c.conversion_type === "return_visit") r.returns++;
+    else if (c.conversion_type === "recognition") r.recs++;
+    roll.set(c.campaign_id, r);
+  }
+  await Promise.all(
+    campaigns.map((c) => {
+      const r = roll.get(c.id) ?? { rewards: 0, returns: 0, recs: 0 };
+      return supabase
+        .from("campaigns")
+        .update({
+          attributed_rewards: r.rewards,
+          attributed_return_visits: r.returns,
+          attributed_recognitions: r.recs,
+          estimated_revenue: estimateRevenue(r.returns, r.rewards),
+        })
+        .eq("id", c.id);
+    }),
+  );
 }
 
 export type CampaignListItem = Campaign & {
@@ -1610,4 +1641,193 @@ export async function getGuestCommunications(
       conversions: convByCampaign.get(r.campaign_id) ?? [],
     }))
     .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""));
+}
+
+// ===========================================================================
+// Sprint 7.6 — Campaign ROI / Intelligence hub
+// ===========================================================================
+
+export type SegmentPerfRow = {
+  segment: string;
+  label: string;
+  campaigns: number;
+  audience: number;
+  conversions: number;
+  conversionRate: number | null;
+  returnVisits: number;
+  rewardClaims: number;
+};
+
+export type TemplatePerfRow = {
+  templateId: string;
+  name: string;
+  campaigns: number;
+  audience: number;
+  conversions: number;
+  conversionRate: number | null;
+  returnVisits: number;
+  rewardClaims: number;
+};
+
+export type TopGuest = {
+  id: string;
+  name: string | null;
+  recognitions: number;
+  rewards: number;
+  returnVisits: number;
+  engagement: number;
+};
+
+export type TopRecoveryCampaign = {
+  id: string;
+  name: string;
+  segment: string;
+  recovered: number;
+  estimatedRevenue: number;
+};
+
+export type Intelligence = {
+  segmentPerf: SegmentPerfRow[];
+  channelPerf: ChannelPerf[];
+  templatePerf: TemplatePerfRow[];
+  topGuests: { engagement: TopGuest[]; returning: TopGuest[]; rewards: TopGuest[] };
+  topRecoveryCampaigns: TopRecoveryCampaign[];
+  topStaff: StaffImpactRow[];
+  totalEstimatedRevenue: number;
+};
+
+export async function getIntelligence(
+  restaurantId: string,
+): Promise<Intelligence> {
+  const [{ campaigns }, { guests }, staff] = await Promise.all([
+    getCampaigns(restaurantId),
+    getCrmData(restaurantId),
+    getStaffImpact(restaurantId),
+  ]);
+  const sent = campaigns.filter((c) => c.status === "completed");
+
+  // ---- Segment performance ----
+  const segMap = new Map<string, SegmentPerfRow>();
+  for (const c of sent) {
+    const s = segMap.get(c.segment) ?? {
+      segment: c.segment,
+      label: segmentLabel(c.segment),
+      campaigns: 0,
+      audience: 0,
+      conversions: 0,
+      conversionRate: null,
+      returnVisits: 0,
+      rewardClaims: 0,
+    };
+    s.campaigns++;
+    s.audience += c.audience_count;
+    s.conversions += c.kpis.conversions;
+    s.returnVisits += c.kpis.returnVisits;
+    s.rewardClaims += c.kpis.rewardClaims;
+    segMap.set(c.segment, s);
+  }
+  const segmentPerf = [...segMap.values()]
+    .map((s) => ({ ...s, conversionRate: s.audience ? s.conversions / s.audience : null }))
+    .sort((a, b) => (b.conversionRate ?? 0) - (a.conversionRate ?? 0));
+
+  // ---- Channel performance ----
+  const chMap = new Map<CampaignChannel, ChannelPerf>();
+  for (const c of sent) {
+    const ch = chMap.get(c.channel) ?? {
+      channel: c.channel,
+      campaigns: 0,
+      audience: 0,
+      conversions: 0,
+      conversionRate: null,
+    };
+    ch.campaigns++;
+    ch.audience += c.audience_count;
+    ch.conversions += c.kpis.conversions;
+    chMap.set(c.channel, ch);
+  }
+  const channelPerf = [...chMap.values()].map((c) => ({
+    ...c,
+    conversionRate: c.audience ? c.conversions / c.audience : null,
+  }));
+
+  // ---- Template performance ----
+  const tplMap = new Map<string, TemplatePerfRow>();
+  for (const c of sent) {
+    if (!c.template_id) continue;
+    const t = tplMap.get(c.template_id) ?? {
+      templateId: c.template_id,
+      name: c.templateName ?? "—",
+      campaigns: 0,
+      audience: 0,
+      conversions: 0,
+      conversionRate: null,
+      returnVisits: 0,
+      rewardClaims: 0,
+    };
+    t.campaigns++;
+    t.audience += c.audience_count;
+    t.conversions += c.kpis.conversions;
+    t.returnVisits += c.kpis.returnVisits;
+    t.rewardClaims += c.kpis.rewardClaims;
+    tplMap.set(c.template_id, t);
+  }
+  const templatePerf = [...tplMap.values()]
+    .map((t) => ({ ...t, conversionRate: t.audience ? t.conversions / t.audience : null }))
+    .sort((a, b) => (b.conversionRate ?? 0) - (a.conversionRate ?? 0));
+
+  // ---- Top guests ----
+  const guestValues: TopGuest[] = guests.map((g) => ({
+    id: g.id,
+    name: g.name,
+    recognitions: g.recognitionEvents,
+    rewards: g.rewardsClaimed,
+    returnVisits: g.returnVisits,
+    engagement: engagementScore({
+      recognitions: g.recognitionEvents,
+      rewardsClaimed: g.rewardsClaimed,
+      returnVisits: g.returnVisits,
+    }),
+  }));
+  const top = (arr: TopGuest[], key: (g: TopGuest) => number) =>
+    arr
+      .filter((g) => key(g) > 0)
+      .sort((a, b) => key(b) - key(a))
+      .slice(0, 5);
+
+  // ---- Top recovery campaigns ----
+  const topRecoveryCampaigns: TopRecoveryCampaign[] = sent
+    .filter((c) => c.kpis.returnVisits > 0)
+    .sort((a, b) => b.kpis.returnVisits - a.kpis.returnVisits)
+    .slice(0, 5)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      segment: segmentLabel(c.segment),
+      recovered: c.kpis.returnVisits,
+      estimatedRevenue: c.estimated_revenue,
+    }));
+
+  const topStaff = staff
+    .slice()
+    .sort(
+      (a, b) =>
+        b.recoveredGuests - a.recoveredGuests ||
+        b.returnVisits - a.returnVisits ||
+        b.recognitionEvents - a.recognitionEvents,
+    )
+    .slice(0, 5);
+
+  return {
+    segmentPerf,
+    channelPerf,
+    templatePerf,
+    topGuests: {
+      engagement: top(guestValues, (g) => g.engagement),
+      returning: top(guestValues, (g) => g.returnVisits),
+      rewards: top(guestValues, (g) => g.rewards),
+    },
+    topRecoveryCampaigns,
+    topStaff,
+    totalEstimatedRevenue: sent.reduce((n, c) => n + c.estimated_revenue, 0),
+  };
 }

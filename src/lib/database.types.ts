@@ -725,6 +725,10 @@ export interface Database {
           status: CampaignStatus;
           attribution_window_days: number;
           audience_count: number;
+          estimated_revenue: number;
+          attributed_rewards: number;
+          attributed_return_visits: number;
+          attributed_recognitions: number;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -741,6 +745,10 @@ export interface Database {
           status?: CampaignStatus;
           attribution_window_days?: number;
           audience_count?: number;
+          estimated_revenue?: number;
+          attributed_rewards?: number;
+          attributed_return_visits?: number;
+          attributed_recognitions?: number;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;

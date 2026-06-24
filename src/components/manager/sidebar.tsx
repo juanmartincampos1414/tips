@@ -14,6 +14,7 @@ const NAV = [
   { href: "/impacto", label: "Impacto", ownerOnly: false },
   { href: "/clientes", label: "Clientes", ownerOnly: false },
   { href: "/campanas", label: "Campañas", ownerOnly: false },
+  { href: "/inteligencia", label: "Inteligencia", ownerOnly: false },
   { href: "/importar", label: "Importar", ownerOnly: false },
   { href: "/recompensas", label: "Recompensas", ownerOnly: false },
   { href: "/nfc", label: "NFC", ownerOnly: false },

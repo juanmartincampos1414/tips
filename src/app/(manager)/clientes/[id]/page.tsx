@@ -10,7 +10,11 @@ import {
   getGuestProfile,
   getGuestTimeline,
 } from "@/lib/queries";
-import { CHANNEL_LABEL, CONVERSION_LABEL } from "@/lib/campaigns";
+import {
+  CHANNEL_LABEL,
+  CONVERSION_LABEL,
+  engagementScore,
+} from "@/lib/campaigns";
 import { formatPhone } from "@/lib/phone";
 import {
   computeScore,
@@ -48,6 +52,11 @@ export default async function GuestProfilePage({
   const { guest, stats, lastStaffName, notes, tags } = profile;
   const segment = computeSegment(stats);
   const score = computeScore(stats);
+  const engagement = engagementScore({
+    recognitions: stats.recognitionEvents,
+    rewardsClaimed: stats.rewardsClaimed,
+    returnVisits: stats.returnVisits,
+  });
   const timeline = await getGuestTimeline(id);
   const communications = await getGuestCommunications(id);
 
@@ -95,6 +104,9 @@ export default async function GuestProfilePage({
           </span>
           <span className="rounded-full bg-dark px-3 py-1 text-xs font-medium text-white">
             Score {score}
+          </span>
+          <span className="rounded-full bg-pink/10 px-3 py-1 text-xs font-medium text-pink">
+            Engagement {engagement}
           </span>
         </div>
       </header>

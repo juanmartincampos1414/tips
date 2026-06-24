@@ -16,6 +16,12 @@ import { archiveCampaign, sendCampaign } from "../actions";
 export const dynamic = "force-dynamic";
 
 const pct = (r: number | null) => (r == null ? "—" : `${Math.round(r * 100)}%`);
+const ars = (n: number) =>
+  new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 0,
+  }).format(n);
 const dt = (iso: string | null) =>
   iso
     ? new Date(iso).toLocaleString("es-AR", {
@@ -112,6 +118,28 @@ export default async function CampaignDetailPage({
         <Kpi label="Conversion rate" value={pct(kpis.conversionRate)} highlight />
       </div>
 
+      {/* Campaign value (Sprint 7.6 — placeholder economics) */}
+      {!isDraft ? (
+        <Card className="mb-6 border-pink/30 bg-pink/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-muted">
+                Revenue estimado{" "}
+                <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-700">
+                  placeholder
+                </span>
+              </p>
+              <p className="mt-1 text-2xl font-bold text-pink">{ars(c.estimated_revenue)}</p>
+            </div>
+            <div className="flex gap-5 text-sm">
+              <ValueStat label="Return visits" value={c.attributed_return_visits} />
+              <ValueStat label="Rewards" value={c.attributed_rewards} />
+              <ValueStat label="Recognitions" value={c.attributed_recognitions} />
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       {!isDraft && kpis.delivered === 0 && kpis.failed > 0 ? (
         <div className="mb-6 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 ring-1 ring-amber-200">
           Los envíos quedaron en modo mock (sin proveedor / sin entrega real), por
@@ -182,5 +210,14 @@ function Kpi({ label, value, highlight }: { label: string; value: number | strin
       <p className="text-xs font-medium text-muted">{label}</p>
       <p className={`mt-1 text-xl font-bold ${highlight ? "text-pink" : "text-dark"}`}>{value}</p>
     </Card>
+  );
+}
+
+function ValueStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="text-center">
+      <p className="text-lg font-bold text-dark">{value}</p>
+      <p className="text-xs text-muted">{label}</p>
+    </div>
   );
 }
