@@ -844,6 +844,100 @@ export interface Database {
         >;
         Relationships: [];
       };
+      connections: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          provider: string;
+          category: string;
+          status: string;
+          sandbox: boolean;
+          credentials_ref: string | null;
+          credentials_meta: Json;
+          capabilities: Json;
+          last_sync: string | null;
+          next_sync: string | null;
+          last_error: string | null;
+          health: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          provider: string;
+          category: string;
+          status?: string;
+          sandbox?: boolean;
+          credentials_ref?: string | null;
+          credentials_meta?: Json;
+          capabilities?: Json;
+          last_sync?: string | null;
+          next_sync?: string | null;
+          last_error?: string | null;
+          health?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["connections"]["Insert"]>;
+        Relationships: [];
+      };
+      sync_jobs: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          connection_id: string | null;
+          provider: string;
+          direction: string;
+          status: string;
+          rows_processed: number;
+          duration_ms: number | null;
+          error: string | null;
+          retry_count: number;
+          started_at: string | null;
+          finished_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          connection_id?: string | null;
+          provider: string;
+          direction?: string;
+          status?: string;
+          rows_processed?: number;
+          duration_ms?: number | null;
+          error?: string | null;
+          retry_count?: number;
+          started_at?: string | null;
+          finished_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["sync_jobs"]["Insert"]>;
+        Relationships: [];
+      };
+      integration_events: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          type: string;
+          source: string;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          type: string;
+          source?: string;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["integration_events"]["Insert"]
+        >;
+        Relationships: [];
+      };
       nfc_inventory: {
         Row: {
           id: string;

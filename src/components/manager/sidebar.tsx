@@ -19,6 +19,7 @@ const NAV = [
   { href: "/recompensas", label: "Recompensas", ownerOnly: false },
   { href: "/nfc", label: "NFC", ownerOnly: false },
   { href: "/emails", label: "Emails", ownerOnly: true },
+  { href: "/integraciones", label: "Integraciones", ownerOnly: true },
   { href: "/equipo", label: "Equipo", ownerOnly: true },
   { href: "/configuracion", label: "Configuración", ownerOnly: true },
 ];
