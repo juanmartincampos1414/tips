@@ -1,5 +1,6 @@
 import "server-only";
 
+import { fetchAllRows } from "@/lib/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { emailFlags, resendListDomains } from "./provider";
@@ -50,17 +51,21 @@ export async function getEmailReadiness(
   const flags = emailFlags();
   const supabase = createAdminClient();
 
-  const [{ data: settings }, { data: logs }, { data: events }, domains] =
-    await Promise.all([
-      supabase
-        .from("restaurant_settings")
-        .select("sender_email, email_enabled")
-        .eq("restaurant_id", restaurantId)
-        .maybeSingle(),
-      supabase.from("email_logs").select("status").eq("restaurant_id", restaurantId),
-      supabase.from("email_events").select("event_type").eq("restaurant_id", restaurantId),
-      resendListDomains(),
-    ]);
+  // logs/events scale with sends → paginate past the 1000 cap for true health.
+  const [{ data: settings }, logs, events, domains] = await Promise.all([
+    supabase
+      .from("restaurant_settings")
+      .select("sender_email, email_enabled")
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle(),
+    fetchAllRows<{ status: string }>((f, t) =>
+      supabase.from("email_logs").select("status").eq("restaurant_id", restaurantId).range(f, t),
+    ),
+    fetchAllRows<{ event_type: string }>((f, t) =>
+      supabase.from("email_events").select("event_type").eq("restaurant_id", restaurantId).range(f, t),
+    ),
+    resendListDomains(),
+  ]);
 
   const senderEmail = settings?.sender_email ?? null;
   const emailEnabled = settings?.email_enabled ?? false;

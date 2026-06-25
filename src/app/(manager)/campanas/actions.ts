@@ -127,17 +127,22 @@ export async function sendCampaign(formData: FormData): Promise<void> {
     .update({ status: "sending", sent_at: new Date().toISOString(), audience_count: audience.length })
     .eq("id", id);
 
-  // Freeze the audience snapshot.
-  await supabase.from("campaign_audiences").upsert(
-    audience.map((g) => ({
-      campaign_id: id,
-      guest_id: g.id,
-      segment_snapshot: g.segment,
-    })),
-    { onConflict: "campaign_id,guest_id", ignoreDuplicates: true },
-  );
+  // Freeze the audience snapshot (chunked for large audiences).
+  for (let i = 0; i < audience.length; i += 500) {
+    await supabase.from("campaign_audiences").upsert(
+      audience.slice(i, i + 500).map((g) => ({
+        campaign_id: id,
+        guest_id: g.id,
+        segment_snapshot: g.segment,
+      })),
+      { onConflict: "campaign_id,guest_id", ignoreDuplicates: true },
+    );
+  }
 
-  // Dispatch per guest + collect recipient rows.
+  // Dispatch per guest + collect recipient rows. NOTE: this is a per-guest loop;
+  // it's fine for mock/moderate audiences, but a real send to many thousands
+  // needs a queue / Resend batch API (each real send is an external call) —
+  // tracked as a follow-up before high-volume real campaigns go live.
   const recipients: {
     campaign_id: string;
     guest_id: string;
@@ -184,18 +189,21 @@ export async function sendCampaign(formData: FormData): Promise<void> {
     }
   }
 
-  await supabase
-    .from("campaign_recipients")
-    .upsert(recipients, { onConflict: "campaign_id,guest_id", ignoreDuplicates: false });
+  for (let i = 0; i < recipients.length; i += 500) {
+    await supabase
+      .from("campaign_recipients")
+      .upsert(recipients.slice(i, i + 500), { onConflict: "campaign_id,guest_id", ignoreDuplicates: false });
+  }
 
-  // Last-touch attribution pointer on each targeted guest.
-  await supabase
-    .from("guests")
-    .update({ last_campaign_id: id, last_campaign_sent_at: new Date().toISOString() })
-    .in(
-      "id",
-      audience.map((g) => g.id),
-    );
+  // Last-touch attribution pointer on each targeted guest (chunked IN list).
+  const audienceIds = audience.map((g) => g.id);
+  const stampedAt = new Date().toISOString();
+  for (let i = 0; i < audienceIds.length; i += 500) {
+    await supabase
+      .from("guests")
+      .update({ last_campaign_id: id, last_campaign_sent_at: stampedAt })
+      .in("id", audienceIds.slice(i, i + 500));
+  }
 
   await supabase.from("campaigns").update({ status: "completed" }).eq("id", id);
 

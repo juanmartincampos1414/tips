@@ -14,6 +14,8 @@ import { getCampaign, getCurrentRestaurant } from "@/lib/queries";
 import { archiveCampaign, sendCampaign } from "../actions";
 
 export const dynamic = "force-dynamic";
+// Sending to a large audience writes/dispatches in batches.
+export const maxDuration = 300;
 
 const pct = (r: number | null) => (r == null ? "—" : `${Math.round(r * 100)}%`);
 const ars = (n: number) =>

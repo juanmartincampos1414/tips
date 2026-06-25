@@ -379,12 +379,16 @@ export async function getRewards(
 ): Promise<RewardWithGuest[]> {
   await expireDueRewards(restaurantId);
   const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("rewards")
-    .select("*, guests(name), wallet_passes(pass_identifier)")
-    .eq("restaurant_id", restaurantId)
-    .order("created_at", { ascending: false });
-  return (data as RewardWithGuest[] | null) ?? [];
+  // One reward per guest capture → grows with the base; paginate past 1000.
+  const data = await fetchAllRows<RewardWithGuest>((f, t) =>
+    supabase
+      .from("rewards")
+      .select("*, guests(name), wallet_passes(pass_identifier)")
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false })
+      .range(f, t),
+  );
+  return data;
 }
 
 export type DashboardKpis = {
@@ -636,8 +640,9 @@ export type CrmKpis = {
  * Fetch every row of a query, paging past PostgREST's 1000-row cap. `page`
  * builds the range-limited query for each window. Without this, aggregations
  * over large tables (e.g. a 6k-guest base) silently cap at 1000 → wrong KPIs.
+ * RULE: any query that can exceed 1000 rows must use this (or count/head).
  */
-async function fetchAllRows<T>(
+export async function fetchAllRows<T>(
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
 ): Promise<T[]> {
   const size = 1000;
@@ -1269,31 +1274,52 @@ export async function syncCampaignConversions(
     .not("sent_at", "is", null);
   if (!campaigns || campaigns.length === 0) return;
 
-  const [{ data: aud }, { data: claims }, { data: returns }, { data: recs }, { data: reviews }] =
-    await Promise.all([
+  // All of these scale with audience size / activity → paginate past 1000.
+  const campaignIds = campaigns.map((c) => c.id);
+  const [aud, claims, returns, recs, reviews] = await Promise.all([
+    fetchAllRows<{ campaign_id: string; guest_id: string }>((f, t) =>
       supabase
         .from("campaign_audiences")
         .select("campaign_id, guest_id")
-        .in("campaign_id", campaigns.map((c) => c.id)),
+        .in("campaign_id", campaignIds)
+        .range(f, t),
+    ),
+    fetchAllRows<{ id: string; guest_id: string; claimed_at: string }>((f, t) =>
       supabase
         .from("reward_claims")
         .select("id, guest_id, claimed_at")
-        .eq("restaurant_id", restaurantId),
+        .eq("restaurant_id", restaurantId)
+        .range(f, t),
+    ),
+    fetchAllRows<{ id: string; guest_id: string; created_at: string }>((f, t) =>
       supabase
         .from("return_visits")
         .select("id, guest_id, created_at")
-        .eq("restaurant_id", restaurantId),
+        .eq("restaurant_id", restaurantId)
+        .range(f, t),
+    ),
+    fetchAllRows<{ id: string; guest_id: string | null; created_at: string }>((f, t) =>
       supabase
         .from("recognition_events")
         .select("id, guest_id, created_at")
         .eq("restaurant_id", restaurantId)
-        .not("guest_id", "is", null),
+        .not("guest_id", "is", null)
+        .range(f, t),
+    ),
+    fetchAllRows<{
+      id: string;
+      recognition_event_id: string;
+      completed_at: string | null;
+      status: string;
+    }>((f, t) =>
       supabase
         .from("review_requests")
         .select("id, recognition_event_id, completed_at, status")
         .eq("restaurant_id", restaurantId)
-        .eq("status", "completed"),
-    ]);
+        .eq("status", "completed")
+        .range(f, t),
+    ),
+  ]);
 
   // Map recognition event id -> guest id (for review attribution).
   const recGuest = new Map<string, string>();
@@ -1350,10 +1376,14 @@ export async function syncCampaignConversions(
       });
 
   // Materialize per-campaign value rollups (Sprint 7.6) from the final state.
-  const { data: allConv } = await supabase
-    .from("campaign_conversions")
-    .select("campaign_id, conversion_type")
-    .eq("restaurant_id", restaurantId);
+  const allConv = await fetchAllRows<{ campaign_id: string; conversion_type: string }>(
+    (f, t) =>
+      supabase
+        .from("campaign_conversions")
+        .select("campaign_id, conversion_type")
+        .eq("restaurant_id", restaurantId)
+        .range(f, t),
+  );
   const roll = new Map<string, { rewards: number; returns: number; recs: number }>();
   for (const c of allConv ?? []) {
     const r = roll.get(c.campaign_id) ?? { rewards: 0, returns: 0, recs: 0 };
@@ -1419,7 +1449,9 @@ export async function getCampaigns(
 ): Promise<{ campaigns: CampaignListItem[]; intelligence: CampaignIntelligence }> {
   await syncCampaignConversions(restaurantId);
   const supabase = createAdminClient();
-  const [{ data: rows }, { data: templates }, { data: recipients }, { data: conversions }, { data: audiences }] =
+  // recipients/conversions/audiences scale with campaign audience size (a send
+  // to a large segment can be tens of thousands) → paginate past the 1000 cap.
+  const [{ data: rows }, { data: templates }, recipients, conversions, audiences] =
     await Promise.all([
       supabase
         .from("campaigns")
@@ -1427,12 +1459,20 @@ export async function getCampaigns(
         .eq("restaurant_id", restaurantId)
         .order("created_at", { ascending: false }),
       supabase.from("email_templates").select("id, name").eq("restaurant_id", restaurantId),
-      supabase.from("campaign_recipients").select("campaign_id, status"),
-      supabase
-        .from("campaign_conversions")
-        .select("campaign_id, guest_id, conversion_type")
-        .eq("restaurant_id", restaurantId),
-      supabase.from("campaign_audiences").select("campaign_id, guest_id"),
+      fetchAllRows<{ campaign_id: string; status: string }>((f, t) =>
+        supabase.from("campaign_recipients").select("campaign_id, status").range(f, t),
+      ),
+      fetchAllRows<{ campaign_id: string; guest_id: string; conversion_type: ConversionType }>(
+        (f, t) =>
+          supabase
+            .from("campaign_conversions")
+            .select("campaign_id, guest_id, conversion_type")
+            .eq("restaurant_id", restaurantId)
+            .range(f, t),
+      ),
+      fetchAllRows<{ campaign_id: string; guest_id: string }>((f, t) =>
+        supabase.from("campaign_audiences").select("campaign_id, guest_id").range(f, t),
+      ),
     ]);
 
   const tplName = new Map((templates ?? []).map((t) => [t.id, t.name]));

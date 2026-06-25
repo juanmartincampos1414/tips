@@ -4,6 +4,7 @@ import { getCurrentMembership, MANAGER_ROLES } from "@/lib/auth";
 import { toCsv } from "@/lib/csv";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  fetchAllRows,
   getCrmData,
   getRewards,
   getStaffImpact,
@@ -51,22 +52,21 @@ export async function GET(
     ]);
   } else if (type === "reviews") {
     const supabase = createAdminClient();
-    const { data } = await supabase
-      .from("review_requests")
-      .select("route, status, created_at, recognition_events(guests(name))")
-      .eq("restaurant_id", rid)
-      .order("created_at", { ascending: false });
+    const data = await fetchAllRows<{
+      route: string;
+      status: string;
+      created_at: string;
+      recognition_events: { guests: { name: string } | null } | null;
+    }>((f, t) =>
+      supabase
+        .from("review_requests")
+        .select("route, status, created_at, recognition_events(guests(name))")
+        .eq("restaurant_id", rid)
+        .order("created_at", { ascending: false })
+        .range(f, t),
+    );
     headers = ["Cliente", "Ruta", "Estado", "Fecha"];
-    rows = (
-      (data as
-        | {
-            route: string;
-            status: string;
-            created_at: string;
-            recognition_events: { guests: { name: string } | null } | null;
-          }[]
-        | null) ?? []
-    ).map((r) => [
+    rows = data.map((r) => [
       r.recognition_events?.guests?.name ?? "",
       r.route,
       r.status,
@@ -74,17 +74,19 @@ export async function GET(
     ]);
   } else if (type === "return_visits") {
     const supabase = createAdminClient();
-    const { data } = await supabase
-      .from("return_visits")
-      .select("created_at, guests(name, email)")
-      .eq("restaurant_id", rid)
-      .order("created_at", { ascending: false });
+    const data = await fetchAllRows<{
+      created_at: string;
+      guests: { name: string; email: string } | null;
+    }>((f, t) =>
+      supabase
+        .from("return_visits")
+        .select("created_at, guests(name, email)")
+        .eq("restaurant_id", rid)
+        .order("created_at", { ascending: false })
+        .range(f, t),
+    );
     headers = ["Cliente", "Email", "Fecha"];
-    rows = (
-      (data as
-        | { created_at: string; guests: { name: string; email: string } | null }[]
-        | null) ?? []
-    ).map((r) => [
+    rows = data.map((r) => [
       r.guests?.name ?? "",
       r.guests?.email ?? "",
       date(r.created_at),
