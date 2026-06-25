@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { assignNfcBand, markNfcStatus } from "@/app/actions";
 import { Card } from "@/components/ui/card";
+import { ConfirmSubmit } from "@/components/ui/confirm-submit";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
   getCurrentRestaurant,
@@ -215,12 +216,12 @@ function MarkButton({
     <form action={markNfcStatus}>
       <input type="hidden" name="nfc_id" value={id} />
       <input type="hidden" name="status" value={status} />
-      <SubmitButton
-        pendingLabel="…"
-        className="h-8 bg-transparent px-2 py-0 text-xs font-semibold text-muted hover:bg-background hover:text-dark"
+      <ConfirmSubmit
+        message={`¿Marcar esta banda como "${label}"? Se desasigna del camarero.`}
+        className="h-8 rounded bg-transparent px-2 py-0 text-xs font-semibold text-muted hover:bg-background hover:text-dark"
       >
         {label}
-      </SubmitButton>
+      </ConfirmSubmit>
     </form>
   );
 }

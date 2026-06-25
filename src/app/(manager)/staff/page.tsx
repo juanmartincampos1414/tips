@@ -4,7 +4,7 @@ import Link from "next/link";
 import { archiveStaff } from "@/app/actions";
 import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { ConfirmSubmit } from "@/components/ui/confirm-submit";
 import {
   getCurrentRestaurant,
   getStaffMetrics,
@@ -124,12 +124,12 @@ export default async function StaffPage() {
                         </Link>
                         <form action={archiveStaff}>
                           <input type="hidden" name="id" value={member.id} />
-                          <SubmitButton
-                            pendingLabel="…"
-                            className="h-auto bg-transparent px-3 py-1.5 text-xs font-semibold text-muted hover:bg-background hover:text-dark"
+                          <ConfirmSubmit
+                            message={`¿Archivar a ${member.name}? Deja de aparecer en el equipo activo.`}
+                            className="h-auto rounded-lg bg-transparent px-3 py-1.5 text-xs font-semibold text-muted hover:bg-background hover:text-dark"
                           >
                             Archivar
-                          </SubmitButton>
+                          </ConfirmSubmit>
                         </form>
                       </div>
                     </td>

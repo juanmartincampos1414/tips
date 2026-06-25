@@ -11,6 +11,8 @@ import {
 } from "@/lib/campaigns";
 import { getCampaign, getCurrentRestaurant } from "@/lib/queries";
 
+import { ConfirmSubmit } from "@/components/ui/confirm-submit";
+
 import { archiveCampaign, sendCampaign } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -78,19 +80,22 @@ export default async function CampaignDetailPage({
           {isDraft ? (
             <form action={sendCampaign}>
               <input type="hidden" name="id" value={c.id} />
-              <button
-                type="submit"
+              <ConfirmSubmit
+                message={`Vas a enviar "${c.name}" a ${c.audience_count} destinatario(s) por ${CHANNEL_LABEL[c.channel]}. Esta acción no se puede deshacer. ¿Confirmás?`}
                 className="rounded-full bg-pink px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
               >
                 Enviar a {c.audience_count}
-              </button>
+              </ConfirmSubmit>
             </form>
           ) : c.status !== "archived" ? (
             <form action={archiveCampaign}>
               <input type="hidden" name="id" value={c.id} />
-              <button type="submit" className="text-xs font-medium text-muted hover:text-pink">
+              <ConfirmSubmit
+                message={`¿Archivar la campaña "${c.name}"?`}
+                className="text-xs font-medium text-muted hover:text-pink"
+              >
                 Archivar
-              </button>
+              </ConfirmSubmit>
             </form>
           ) : null}
         </div>

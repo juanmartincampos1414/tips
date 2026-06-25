@@ -1,6 +1,6 @@
 import { claimReward } from "@/app/actions";
 import { Card } from "@/components/ui/card";
-import { SubmitButton } from "@/components/ui/submit-button";
+import { ConfirmSubmit } from "@/components/ui/confirm-submit";
 import {
   getCurrentRestaurant,
   getRewardTemplates,
@@ -140,12 +140,12 @@ export default async function RecompensasPage() {
                           {r.status === "active" ? (
                             <form action={claimReward}>
                               <input type="hidden" name="reward_id" value={r.id} />
-                              <SubmitButton
-                                pendingLabel="…"
-                                className="h-auto bg-pink/10 px-3 py-1.5 text-xs font-semibold text-pink hover:bg-pink/20"
+                              <ConfirmSubmit
+                                message="¿Marcar esta reward como reclamada? Registra una visita de retorno y no se puede deshacer."
+                                className="h-auto rounded-lg bg-pink/10 px-3 py-1.5 text-xs font-semibold text-pink hover:bg-pink/20"
                               >
                                 Reclamar
-                              </SubmitButton>
+                              </ConfirmSubmit>
                             </form>
                           ) : null}
                         </div>

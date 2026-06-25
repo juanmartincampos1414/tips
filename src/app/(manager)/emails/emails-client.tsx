@@ -133,7 +133,14 @@ export function TemplateCard({ template }: { template: EmailTemplate }) {
       {template.status !== "archived" ? (
         <form action={archiveTemplate} className="mt-2">
           <input type="hidden" name="id" value={template.id} />
-          <button type="submit" className="text-xs font-medium text-muted hover:text-pink">
+          <button
+            type="submit"
+            onClick={(e) => {
+              if (!window.confirm(`¿Archivar la plantilla "${template.name}"?`))
+                e.preventDefault();
+            }}
+            className="text-xs font-medium text-muted hover:text-pink"
+          >
             Archivar
           </button>
         </form>
