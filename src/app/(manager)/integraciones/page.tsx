@@ -44,6 +44,18 @@ const dt = (iso: string | null) =>
       })
     : "—";
 
+const CAP_LABEL: Record<string, string> = {
+  supportsGuests: "Guests",
+  supportsOrders: "Orders",
+  supportsReservations: "Reservas",
+  supportsPayments: "Pagos",
+  supportsReviews: "Reviews",
+  supportsRewards: "Rewards",
+  supportsWallet: "Wallet",
+  supportsCampaigns: "Campañas",
+  supportsLoyalty: "Loyalty",
+};
+
 const CATEGORY_ORDER: IntegrationCategory[] = [
   "pos",
   "pms",
@@ -113,6 +125,16 @@ export default async function IntegracionesPage() {
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_CLS[c.status]}`}>
                     {STATUS_LABEL[c.status]}
                   </span>
+                </div>
+
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {Object.entries(c.capabilities)
+                    .filter(([, v]) => v)
+                    .map(([k]) => (
+                      <span key={k} className="rounded bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                        {CAP_LABEL[k] ?? k}
+                      </span>
+                    ))}
                 </div>
 
                 {c.connection ? (
