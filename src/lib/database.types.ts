@@ -237,6 +237,7 @@ export interface Database {
           tip_id: string | null;
           rating_id: string | null;
           source: RecognitionSource;
+          confirmed: boolean;
           created_at: string;
         };
         Insert: {
@@ -247,6 +248,7 @@ export interface Database {
           tip_id?: string | null;
           rating_id?: string | null;
           source?: RecognitionSource;
+          confirmed?: boolean;
           created_at?: string;
         };
         Update: Partial<
@@ -638,6 +640,142 @@ export interface Database {
         Update: Partial<
           Database["public"]["Tables"]["restaurant_settings"]["Insert"]
         >;
+        Relationships: [];
+      };
+      payments: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          guest_id: string | null;
+          staff_id: string | null;
+          recognition_event_id: string | null;
+          provider: string;
+          provider_payment_id: string | null;
+          external_reference: string;
+          amount: number;
+          currency: string;
+          payment_method: string | null;
+          status: string;
+          failure_reason: string | null;
+          tip_source: string;
+          business_unit: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          guest_id?: string | null;
+          staff_id?: string | null;
+          recognition_event_id?: string | null;
+          provider?: string;
+          provider_payment_id?: string | null;
+          external_reference: string;
+          amount: number;
+          currency?: string;
+          payment_method?: string | null;
+          status?: string;
+          failure_reason?: string | null;
+          tip_source?: string;
+          business_unit?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+          completed_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["payments"]["Insert"]>;
+        Relationships: [];
+      };
+      payment_intents: {
+        Row: {
+          id: string;
+          payment_id: string;
+          provider: string;
+          preference_id: string | null;
+          checkout_url: string | null;
+          expires_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          payment_id: string;
+          provider: string;
+          preference_id?: string | null;
+          checkout_url?: string | null;
+          expires_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["payment_intents"]["Insert"]>;
+        Relationships: [];
+      };
+      payment_events: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          payment_id: string | null;
+          type: string;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          payment_id?: string | null;
+          type: string;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["payment_events"]["Insert"]>;
+        Relationships: [];
+      };
+      staff_settlements: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          staff_id: string;
+          payment_id: string;
+          gross_amount: number;
+          net_amount: number;
+          settlement_status: string;
+          settled_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          staff_id: string;
+          payment_id: string;
+          gross_amount: number;
+          net_amount: number;
+          settlement_status?: string;
+          settled_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["staff_settlements"]["Insert"]>;
+        Relationships: [];
+      };
+      restaurant_payouts: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          amount: number;
+          status: string;
+          period_start: string | null;
+          period_end: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          amount?: number;
+          status?: string;
+          period_start?: string | null;
+          period_end?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["restaurant_payouts"]["Insert"]>;
         Relationships: [];
       };
       email_templates: {

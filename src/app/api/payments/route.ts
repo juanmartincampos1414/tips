@@ -1,20 +1,13 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 import { getCurrentMembership, MANAGER_ROLES } from "@/lib/auth";
-import { emitEvent } from "@/lib/integrations/events";
+import { getPaymentDashboard } from "@/lib/payments/queries";
 
-// Payments are not implemented yet (Sprint 8C). This establishes the contract +
-// PaymentCompleted bus event so a PaymentProvider adapter can wire in cleanly.
-export async function POST(req: NextRequest) {
+// Internal API — decoupled from the Core. Same auth model as the app.
+export async function GET() {
   const m = await getCurrentMembership();
   if (!m || !MANAGER_ROLES.includes(m.role))
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const body = await req.json().catch(() => ({}));
-  await emitEvent({
-    restaurantId: m.restaurantId,
-    type: "PaymentCompleted",
-    source: "internal_api",
-    payload: { ...body },
-  });
-  return NextResponse.json({ accepted: true }, { status: 202 });
+  const d = await getPaymentDashboard(m.restaurantId);
+  return NextResponse.json({ kpis: { today: d.totalToday, week: d.totalWeek, month: d.totalMonth, avgTip: d.avgTip, approvalRate: d.approvalRate }, recent: d.recent });
 }

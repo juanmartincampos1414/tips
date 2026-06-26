@@ -13,6 +13,7 @@ function isPublicPath(pathname: string) {
     (pathname.startsWith("/w/") && !pathname.endsWith("/v")) ||
     pathname.startsWith("/api/wallet/") || // wallet provider endpoints
     pathname.startsWith("/api/webhooks/") || // provider webhooks (signed)
+    pathname.startsWith("/pay/") || // public sandbox checkout + return
     pathname.startsWith("/auth")
   );
 }
