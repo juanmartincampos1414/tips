@@ -45,9 +45,10 @@ export function tenantDb(restaurantId: string) {
   const c = unsafeAdminClient() as any;
 
   return {
-    /** SELECT on a DIRECT table, pre-scoped to the tenant. */
-    select(table: DirectTable, columns = "*") {
-      return c.from(table).select(columns).eq("restaurant_id", restaurantId);
+    /** SELECT on a DIRECT table, pre-scoped to the tenant. `options` forwards
+     *  PostgREST select options (e.g. { count: "exact", head: true }). */
+    select(table: DirectTable, columns = "*", options?: { count?: "exact" | "planned" | "estimated"; head?: boolean }) {
+      return c.from(table).select(columns, options).eq("restaurant_id", restaurantId);
     },
     /** INSERT on a DIRECT table — injects restaurant_id into every row. */
     insert(table: DirectTable, rows: Row | Row[]) {
@@ -56,6 +57,18 @@ export function tenantDb(restaurantId: string) {
         restaurant_id: restaurantId,
       }));
       return c.from(table).insert(arr);
+    },
+    /** UPSERT on a DIRECT table — injects restaurant_id into every row. */
+    upsert(
+      table: DirectTable,
+      rows: Row | Row[],
+      options?: { onConflict?: string; ignoreDuplicates?: boolean },
+    ) {
+      const arr = (Array.isArray(rows) ? rows : [rows]).map((r) => ({
+        ...r,
+        restaurant_id: restaurantId,
+      }));
+      return c.from(table).upsert(arr, options);
     },
     /** UPDATE on a DIRECT table — pre-scoped; chain .eq("id", …). */
     update(table: DirectTable, patch: Row) {

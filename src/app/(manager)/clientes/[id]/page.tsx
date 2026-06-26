@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { addGuestNote, addGuestTag, removeGuestTag } from "@/app/actions";
+import { requireTenant } from "@/lib/tenant/context";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -46,7 +47,8 @@ export default async function GuestProfilePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const profile = await getGuestProfile(id);
+  const { restaurantId } = await requireTenant();
+  const profile = await getGuestProfile(restaurantId, id);
   if (!profile) notFound();
 
   const { guest, stats, lastStaffName, notes, tags } = profile;
@@ -57,8 +59,8 @@ export default async function GuestProfilePage({
     rewardsClaimed: stats.rewardsClaimed,
     returnVisits: stats.returnVisits,
   });
-  const timeline = await getGuestTimeline(id);
-  const communications = await getGuestCommunications(id);
+  const timeline = await getGuestTimeline(restaurantId, id);
+  const communications = await getGuestCommunications(restaurantId, id);
 
   const statCards = [
     { label: "Recognition events", value: stats.recognitionEvents },

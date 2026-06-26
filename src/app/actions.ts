@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit, requireManager, requireOwner } from "@/lib/auth";
 import { getCurrentRestaurant } from "@/lib/queries";
@@ -581,10 +582,8 @@ export async function addGuestNote(formData: FormData): Promise<void> {
   const body = str(formData, "body");
   if (!guestId || !body) return;
 
-  const supabase = unsafeAdminClient();
-  await supabase.from("guest_notes").insert({
+  await tenantDb(member.restaurantId).insert("guest_notes", {
     guest_id: guestId,
-    restaurant_id: member.restaurantId,
     body,
     created_by: member.userId,
   });
@@ -604,12 +603,9 @@ export async function addGuestTag(formData: FormData): Promise<void> {
   const tag = str(formData, "tag");
   if (!guestId || !tag) return;
 
-  const supabase = unsafeAdminClient();
-  await supabase
-    .from("guest_tags")
-    .insert({
+  await tenantDb(member.restaurantId)
+    .insert("guest_tags", {
       guest_id: guestId,
-      restaurant_id: member.restaurantId,
       tag,
       created_by: member.userId,
     })
@@ -632,11 +628,6 @@ export async function removeGuestTag(formData: FormData): Promise<void> {
   const guestId = str(formData, "guest_id");
   if (!tagId) return;
 
-  const supabase = unsafeAdminClient();
-  await supabase
-    .from("guest_tags")
-    .delete()
-    .eq("id", tagId)
-    .eq("restaurant_id", member.restaurantId);
+  await tenantDb(member.restaurantId).delete("guest_tags").eq("id", tagId);
   if (guestId) revalidatePath(`/clientes/${guestId}`);
 }

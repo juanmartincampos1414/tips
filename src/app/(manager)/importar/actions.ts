@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { logAudit, requireManager } from "@/lib/auth";
 import { countryNameToIso, normalizePhone } from "@/lib/phone";
 import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import type { ImportRowAction, Json } from "@/lib/database.types";
 import {
   mapHeaders,
@@ -59,7 +60,8 @@ export async function previewImport(
       error: "No se detectaron columnas de nombre/email/teléfono en el archivo.",
     };
 
-  const supabase = unsafeAdminClient();
+  const supabase = unsafeAdminClient(); // import-infra tables (guest_imports, …)
+  const db = tenantDb(member.restaurantId);
 
   // Existing guests for dedup (email + phone digits → id). Paginated so dedup
   // covers the WHOLE base, not just the first 1000.
@@ -67,13 +69,7 @@ export async function previewImport(
     id: string;
     email: string | null;
     phone: string | null;
-  }>((f, t) =>
-    supabase
-      .from("guests")
-      .select("id, email, phone")
-      .eq("restaurant_id", member.restaurantId)
-      .range(f, t),
-  );
+  }>((f, t) => db.select("guests", "id, email, phone").range(f, t));
   const byEmail = new Map<string, string>();
   const byPhone = new Map<string, string>();
   for (const g of existing ?? []) {
@@ -173,7 +169,8 @@ export async function commitImport(formData: FormData): Promise<void> {
   const importId = (formData.get("import_id") as string | null)?.trim();
   if (!importId) return;
 
-  const supabase = unsafeAdminClient();
+  const supabase = unsafeAdminClient(); // import-infra tables (guest_import_rows, import_logs)
+  const db = tenantDb(member.restaurantId);
   const { data: imp } = await supabase
     .from("guest_imports")
     .select("id, status, restaurant_id")
@@ -202,13 +199,7 @@ export async function commitImport(formData: FormData): Promise<void> {
     id: string;
     email: string | null;
     phone: string | null;
-  }>((f, t) =>
-    supabase
-      .from("guests")
-      .select("id, email, phone")
-      .eq("restaurant_id", member.restaurantId)
-      .range(f, t),
-  );
+  }>((f, t) => db.select("guests", "id, email, phone").range(f, t));
   const byEmail = new Map<string, string>();
   const byPhone = new Map<string, string>();
   for (const g of existing) {
@@ -263,11 +254,10 @@ export async function commitImport(formData: FormData): Promise<void> {
   // CREATE in chunks; attach notes/tags to the freshly-inserted ids.
   for (let i = 0; i < toCreate.length; i += 500) {
     const chunk = toCreate.slice(i, i + 500);
-    const { data: ins } = await supabase
-      .from("guests")
+    const { data: ins } = await db
       .insert(
+        "guests",
         chunk.map((c) => ({
-          restaurant_id: member.restaurantId,
           name: c.m.name,
           email: c.m.email,
           phone: c.ph.phone_raw,
@@ -283,15 +273,15 @@ export async function commitImport(formData: FormData): Promise<void> {
 
     const notes: { guest_id: string; restaurant_id: string; body: string; created_by: string }[] = [];
     const tags: { guest_id: string; restaurant_id: string; tag: string; created_by: string }[] = [];
-    (ins ?? []).forEach((g, idx) => {
+    ((ins ?? []) as { id: string }[]).forEach((g, idx) => {
       const c = chunk[idx];
       if (c.m.notes)
         notes.push({ guest_id: g.id, restaurant_id: member.restaurantId, body: c.m.notes, created_by: member.userId });
       for (const tag of c.m.tags)
         tags.push({ guest_id: g.id, restaurant_id: member.restaurantId, tag, created_by: member.userId });
     });
-    if (notes.length) await supabase.from("guest_notes").insert(notes);
-    if (tags.length) await supabase.from("guest_tags").insert(tags);
+    if (notes.length) await db.insert("guest_notes", notes);
+    if (tags.length) await db.insert("guest_tags", tags);
   }
 
   // UPDATE: bulk-fetch matched guests, merge (fill missing), upsert in chunks.
@@ -310,11 +300,20 @@ export async function commitImport(formData: FormData): Promise<void> {
     }
   >();
   for (let i = 0; i < updateIds.length; i += 500) {
-    const { data } = await supabase
-      .from("guests")
-      .select("id, name, email, phone, phone_normalized, country_code, birth_date, metadata")
+    const { data } = await db
+      .select("guests", "id, name, email, phone, phone_normalized, country_code, birth_date, metadata")
       .in("id", updateIds.slice(i, i + 500));
-    for (const g of data ?? []) existingById.set(g.id, g);
+    for (const g of (data ?? []) as {
+      id: string;
+      name: string | null;
+      email: string | null;
+      phone: string | null;
+      phone_normalized: string | null;
+      country_code: string | null;
+      birth_date: string | null;
+      metadata: Json | null;
+    }[])
+      existingById.set(g.id, g);
   }
   const upserts: Record<string, unknown>[] = [];
   const mergedAlready = new Set<string>();
@@ -336,9 +335,7 @@ export async function commitImport(formData: FormData): Promise<void> {
     });
   }
   for (let i = 0; i < upserts.length; i += 500) {
-    await supabase
-      .from("guests")
-      .upsert(upserts.slice(i, i + 500) as never, { onConflict: "id" });
+    await db.upsert("guests", upserts.slice(i, i + 500), { onConflict: "id" });
     updated += Math.min(500, upserts.length - i);
   }
 

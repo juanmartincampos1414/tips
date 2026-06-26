@@ -1,6 +1,7 @@
 import "server-only";
 
 import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import { getCurrentMembership } from "@/lib/auth";
 import {
   contactChannels,
@@ -660,35 +661,25 @@ export async function getCrmData(
   restaurantId: string,
 ): Promise<{ guests: CrmGuest[]; kpis: CrmKpis }> {
   const { computeSegment } = await import("@/lib/segments");
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [guests, events, returns, rewards, tags] = await Promise.all([
     fetchAllRows<Guest & { staff: { name: string } | null }>((f, t) =>
-      supabase
-        .from("guests")
-        .select("*, staff:last_staff_id(name)")
-        .eq("restaurant_id", restaurantId)
+      db
+        .select("guests", "*, staff:last_staff_id(name)")
         .order("created_at", { ascending: false })
         .range(f, t),
     ),
     fetchAllRows<{ guest_id: string | null; created_at: string }>((f, t) =>
-      supabase
-        .from("recognition_events")
-        .select("guest_id, created_at")
-        .eq("restaurant_id", restaurantId)
-        .range(f, t),
+      db.select("recognition_events", "guest_id, created_at").range(f, t),
     ),
     fetchAllRows<{ guest_id: string; created_at: string }>((f, t) =>
-      supabase
-        .from("return_visits")
-        .select("guest_id, created_at")
-        .eq("restaurant_id", restaurantId)
-        .range(f, t),
+      db.select("return_visits", "guest_id, created_at").range(f, t),
     ),
     fetchAllRows<{ guest_id: string; status: string }>((f, t) =>
-      supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId).range(f, t),
+      db.select("rewards", "guest_id, status").range(f, t),
     ),
     fetchAllRows<{ guest_id: string; tag: string }>((f, t) =>
-      supabase.from("guest_tags").select("guest_id, tag").eq("restaurant_id", restaurantId).range(f, t),
+      db.select("guest_tags", "guest_id, tag").range(f, t),
     ),
   ]);
 
@@ -855,12 +846,13 @@ export type GuestProfile = {
 };
 
 export async function getGuestProfile(
+  restaurantId: string,
   guestId: string,
 ): Promise<GuestProfile | null> {
-  const supabase = unsafeAdminClient();
-  const { data: guest } = await supabase
-    .from("guests")
-    .select("*, staff:last_staff_id(name)")
+  const db = tenantDb(restaurantId);
+  // Scoped to the tenant AND the id → a guest from another tenant returns null.
+  const { data: guest } = await db
+    .select("guests", "*, staff:last_staff_id(name)")
     .eq("id", guestId)
     .maybeSingle();
   if (!guest) return null;
@@ -870,33 +862,26 @@ export async function getGuestProfile(
 
   const [events, rewards, returns, reviewsCount, notesRes, tagsRes] =
     await Promise.all([
-      supabase
-        .from("recognition_events")
-        .select("created_at, ratings(rating)")
-        .eq("guest_id", guestId),
-      supabase.from("rewards").select("status").eq("guest_id", guestId),
-      supabase
-        .from("return_visits")
-        .select("created_at")
+      db.select("recognition_events", "created_at, ratings(rating)").eq("guest_id", guestId),
+      db.select("rewards", "status").eq("guest_id", guestId),
+      db
+        .select("return_visits", "created_at")
         .eq("guest_id", guestId)
         .order("created_at", { ascending: false }),
-      supabase
-        .from("review_requests")
-        .select("id, recognition_events!inner(guest_id)", {
+      db
+        .select("review_requests", "id, recognition_events!inner(guest_id)", {
           count: "exact",
           head: true,
         })
         .eq("recognition_events.guest_id", guestId)
         .eq("route", "public_review")
         .eq("status", "completed"),
-      supabase
-        .from("guest_notes")
-        .select("*")
+      db
+        .select("guest_notes", "*")
         .eq("guest_id", guestId)
         .order("created_at", { ascending: false }),
-      supabase
-        .from("guest_tags")
-        .select("*")
+      db
+        .select("guest_tags", "*")
         .eq("guest_id", guestId)
         .order("created_at", { ascending: true }),
     ]);
@@ -912,8 +897,8 @@ export async function getGuestProfile(
     ? ratings.reduce((a, b) => a + b, 0) / ratings.length
     : null;
 
-  const rewardRows = rewards.data ?? [];
-  const returnRows = returns.data ?? [];
+  const rewardRows = (rewards.data ?? []) as { status: string }[];
+  const returnRows = (returns.data ?? []) as { created_at: string }[];
 
   const activityDates = [
     ...eventRows.map((e) => e.created_at),
@@ -949,31 +934,21 @@ export type TimelineItem = {
 };
 
 export async function getGuestTimeline(
+  restaurantId: string,
   guestId: string,
 ): Promise<TimelineItem[]> {
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [events, reviews, rewards, claims, returns, notes] = await Promise.all([
-    supabase
-      .from("recognition_events")
-      .select("created_at, ratings(rating), tips(amount)")
+    db
+      .select("recognition_events", "created_at, ratings(rating), tips(amount)")
       .eq("guest_id", guestId),
-    supabase
-      .from("review_requests")
-      .select("created_at, route, status, recognition_events!inner(guest_id)")
+    db
+      .select("review_requests", "created_at, route, status, recognition_events!inner(guest_id)")
       .eq("recognition_events.guest_id", guestId),
-    supabase
-      .from("rewards")
-      .select("created_at, title")
-      .eq("guest_id", guestId),
-    supabase
-      .from("reward_claims")
-      .select("claimed_at, rewards(title)")
-      .eq("guest_id", guestId),
-    supabase.from("return_visits").select("created_at").eq("guest_id", guestId),
-    supabase
-      .from("guest_notes")
-      .select("created_at, body")
-      .eq("guest_id", guestId),
+    db.select("rewards", "created_at, title").eq("guest_id", guestId),
+    db.select("reward_claims", "claimed_at, rewards(title)").eq("guest_id", guestId),
+    db.select("return_visits", "created_at").eq("guest_id", guestId),
+    db.select("guest_notes", "created_at, body").eq("guest_id", guestId),
   ]);
 
   const items: TimelineItem[] = [];
@@ -1673,18 +1648,22 @@ export type GuestCommunication = {
 };
 
 export async function getGuestCommunications(
+  restaurantId: string,
   guestId: string,
 ): Promise<GuestCommunication[]> {
   const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
+  // campaign_recipients is a CHILD table (no restaurant_id) → scope via the
+  // parent campaign with an inner-join filter on restaurant_id.
   const { data: recs } = await supabase
     .from("campaign_recipients")
-    .select("campaign_id, status, channel, campaigns(name, sent_at)")
-    .eq("guest_id", guestId);
+    .select("campaign_id, status, channel, campaigns!inner(name, sent_at)")
+    .eq("guest_id", guestId)
+    .eq("campaigns.restaurant_id", restaurantId);
   if (!recs || recs.length === 0) return [];
 
-  const { data: convs } = await supabase
-    .from("campaign_conversions")
-    .select("campaign_id, conversion_type")
+  const { data: convs } = await db
+    .select("campaign_conversions", "campaign_id, conversion_type")
     .eq("guest_id", guestId);
   const convByCampaign = new Map<string, ConversionType[]>();
   for (const c of convs ?? [])

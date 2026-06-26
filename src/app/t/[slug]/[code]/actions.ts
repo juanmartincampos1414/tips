@@ -3,6 +3,7 @@
 import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { ReviewRoute } from "@/lib/database.types";
 import { normalizePhone } from "@/lib/phone";
+import { tenantDb } from "@/lib/tenant/db";
 import { DEFAULT_TEMPLATE, rewardValueLabel } from "@/lib/rewards";
 
 export type RecognitionState = {
@@ -242,21 +243,19 @@ export async function captureGuest(
   const ph = normalizePhone(phone);
 
   const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId); // restaurantId resolved upstream from the slug
 
   // FR-012: create if new, update if the email already exists in this restaurant.
-  const { data: existing } = await supabase
-    .from("guests")
-    .select("id")
-    .eq("restaurant_id", restaurantId)
+  const { data: existing } = await db
+    .select("guests", "id")
     .ilike("email", email)
     .maybeSingle();
 
   let guestId: string;
   if (existing) {
-    guestId = existing.id;
-    await supabase
-      .from("guests")
-      .update({
+    guestId = (existing as { id: string }).id;
+    await db
+      .update("guests", {
         name,
         phone: ph.phone_raw,
         phone_normalized: ph.phone_normalized,
@@ -266,10 +265,8 @@ export async function captureGuest(
       })
       .eq("id", guestId);
   } else {
-    const { data: created, error: insErr } = await supabase
-      .from("guests")
-      .insert({
-        restaurant_id: restaurantId,
+    const { data: created, error: insErr } = await db
+      .insert("guests", {
         name,
         email,
         phone: ph.phone_raw,
@@ -282,7 +279,7 @@ export async function captureGuest(
       .select("id")
       .single();
     if (insErr) return { error: insErr.message };
-    guestId = created.id;
+    guestId = (created as { id: string }).id;
   }
 
   // AC-021: associate the guest with the recognition event.
