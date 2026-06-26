@@ -1,0 +1,101 @@
+import "server-only";
+
+import { unsafeAdminClient } from "@/lib/supabase/admin";
+
+// =============================================================================
+// tenantDb — the single chokepoint for tenant-scoped data access. It wraps the
+// service-role client and STRUCTURALLY applies `restaurant_id` so a developer
+// cannot forget it. Additional filters AND with the scope (PostgREST), so the
+// scope can't be escaped. Product code uses this; the raw client is banned
+// outside the allowlist (build check). Used only by migrated tiers — adding it
+// changes no behavior until a tier adopts it.
+// =============================================================================
+
+// Tables with a direct `restaurant_id` column (auto-scoped). tips/ratings join
+// this list once their column lands (migration 0020).
+export type DirectTable =
+  | "guests" | "rewards" | "payments" | "staff" | "recognition_events"
+  | "tips" | "ratings" | "nfc_inventory" | "connections" | "email_logs"
+  | "email_templates" | "email_events" | "review_requests" | "return_visits"
+  | "campaigns" | "campaign_conversions" | "wallet_passes" | "guest_tags"
+  | "guest_notes" | "guest_imports" | "guest_import_rows" | "import_logs"
+  | "sync_jobs" | "reward_templates" | "reward_claims" | "restaurant_settings"
+  | "integration_events" | "nfc_events" | "visits" | "payment_events"
+  | "staff_settlements" | "restaurant_payouts" | "audit_logs"
+  | "restaurant_members";
+
+// Child tables (no restaurant_id) — scoped via a parent that itself is scoped.
+export type ChildTable =
+  | "payment_intents"
+  | "campaign_recipients"
+  | "campaign_audiences"
+  | "nfc_tags";
+
+const CHILD_PARENT: Record<ChildTable, { fk: string; parent: DirectTable; parentKey: string }> = {
+  payment_intents: { fk: "payment_id", parent: "payments", parentKey: "id" },
+  campaign_recipients: { fk: "campaign_id", parent: "campaigns", parentKey: "id" },
+  campaign_audiences: { fk: "campaign_id", parent: "campaigns", parentKey: "id" },
+  nfc_tags: { fk: "staff_id", parent: "staff", parentKey: "id" },
+};
+
+type Row = Record<string, unknown>;
+
+export function tenantDb(restaurantId: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic wrapper
+  const c = unsafeAdminClient() as any;
+
+  return {
+    /** SELECT on a DIRECT table, pre-scoped to the tenant. */
+    select(table: DirectTable, columns = "*") {
+      return c.from(table).select(columns).eq("restaurant_id", restaurantId);
+    },
+    /** INSERT on a DIRECT table — injects restaurant_id into every row. */
+    insert(table: DirectTable, rows: Row | Row[]) {
+      const arr = (Array.isArray(rows) ? rows : [rows]).map((r) => ({
+        ...r,
+        restaurant_id: restaurantId,
+      }));
+      return c.from(table).insert(arr);
+    },
+    /** UPDATE on a DIRECT table — pre-scoped; chain .eq("id", …). */
+    update(table: DirectTable, patch: Row) {
+      return c.from(table).update(patch).eq("restaurant_id", restaurantId);
+    },
+    /** DELETE on a DIRECT table — pre-scoped; chain .eq("id", …). */
+    delete(table: DirectTable) {
+      return c.from(table).delete().eq("restaurant_id", restaurantId);
+    },
+
+    /**
+     * CHILD read: filter by the parent FK. The parentId MUST come from a
+     * tenant-scoped read (invariant) — cheap and safe for reads.
+     */
+    child(table: ChildTable, parentId: string, columns = "*") {
+      return c.from(table).select(columns).eq(CHILD_PARENT[table].fk, parentId);
+    },
+
+    /**
+     * CHILD write: VERIFY the parent belongs to this tenant first (one guard
+     * query), then run the insert. Returns the inserted rows or throws.
+     */
+    async insertChild(table: ChildTable, parentId: string, rows: Row | Row[]) {
+      const { parent, parentKey, fk } = CHILD_PARENT[table];
+      const { data: ok } = await c
+        .from(parent)
+        .select(parentKey)
+        .eq(parentKey, parentId)
+        .eq("restaurant_id", restaurantId)
+        .maybeSingle();
+      if (!ok) throw new Error(`tenantDb: parent ${parent}/${parentId} not in tenant`);
+      const arr = (Array.isArray(rows) ? rows : [rows]).map((r) => ({ ...r, [fk]: parentId }));
+      return c.from(table).insert(arr);
+    },
+
+    /** ROOT — the tenant's own restaurant row. */
+    restaurant(columns = "*") {
+      return c.from("restaurants").select(columns).eq("id", restaurantId);
+    },
+  };
+}
+
+export type TenantDb = ReturnType<typeof tenantDb>;

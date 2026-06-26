@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/check-tenant-isolation.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:tenant": "node scripts/check-tenant-isolation.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
