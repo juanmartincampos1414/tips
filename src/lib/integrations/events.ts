@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/database.types";
 
 import type { IntegrationEventType } from "./types";
@@ -19,7 +19,7 @@ export async function emitEvent(params: {
   source?: string; // 'core' (default) or a provider id
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const source = params.source ?? "core";
   await supabase.from("integration_events").insert({
     restaurant_id: params.restaurantId,
@@ -49,7 +49,7 @@ export async function getRecentEvents(
   restaurantId: string,
   limit = 30,
 ): Promise<RecentEvent[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("integration_events")
     .select("id, type, source, created_at")

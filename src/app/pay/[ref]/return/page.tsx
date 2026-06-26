@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import { PAYMENT_STATUS_LABEL, type PaymentStatus } from "@/lib/payments/types";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function PaymentReturnPage({
   params: Promise<{ ref: string }>;
 }) {
   const { ref } = await params;
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: payment } = await supabase
     .from("payments")
     .select("amount, currency, status, failure_reason")

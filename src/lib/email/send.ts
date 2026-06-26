@@ -1,12 +1,12 @@
 import "server-only";
 
 import { logAudit } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { EmailLogStatus } from "@/lib/database.types";
 
 import { EMAIL_NOT_CONFIGURED, getEmailProvider } from "./provider";
 
-type Admin = ReturnType<typeof createAdminClient>;
+type Admin = ReturnType<typeof unsafeAdminClient>;
 
 export type SendOutcome = {
   status: EmailLogStatus;
@@ -178,7 +178,7 @@ export async function sendGuestEmail(params: {
   html: string;
   templateId?: string | null;
 }): Promise<SendOutcome> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const settings = await loadSettings(supabase, params.restaurantId);
 
   let block: string | null = null;
@@ -221,7 +221,7 @@ export async function sendTestEmail(params: {
   subject: string;
   html: string;
 }): Promise<SendOutcome> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const settings = await loadSettings(supabase, params.restaurantId);
 
   const outcome = await dispatch(supabase, {
@@ -255,7 +255,7 @@ export async function retryEmail(
   restaurantId: string,
   logId: string,
 ): Promise<SendOutcome> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: log } = await supabase
     .from("email_logs")
     .select("id, recipient_email, subject, template_id, status, retry_count, guest_id")

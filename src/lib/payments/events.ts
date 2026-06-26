@@ -1,7 +1,7 @@
 import "server-only";
 
 import { emitEvent } from "@/lib/integrations/events";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/database.types";
 
 import type { PaymentEventType } from "./types";
@@ -22,7 +22,7 @@ export async function emitPaymentEvent(params: {
   type: PaymentEventType;
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("payment_events").insert({
     restaurant_id: params.restaurantId,
     payment_id: params.paymentId,

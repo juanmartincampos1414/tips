@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/auth";
 import { applyEmailEvent } from "@/lib/email/webhook";
 import { retryEmail } from "@/lib/email/send";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { EmailEventType } from "@/lib/database.types";
 
 const VALID_EVENTS: EmailEventType[] = [
@@ -31,7 +31,7 @@ function str(fd: FormData, k: string) {
 export async function createTestLog(formData: FormData): Promise<void> {
   const member = await requireManager();
   const to = str(formData, "to") || "test@tips.local";
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("email_logs").insert({
     restaurant_id: member.restaurantId,
     recipient_email: to,
@@ -53,7 +53,7 @@ export async function simulateEvent(formData: FormData): Promise<void> {
   const event = str(formData, "event") as EmailEventType;
   if (!logId || !VALID_EVENTS.includes(event)) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: log } = await supabase
     .from("email_logs")
     .select("id, restaurant_id, guest_id")

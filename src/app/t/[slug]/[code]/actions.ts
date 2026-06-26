@@ -1,6 +1,6 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { ReviewRoute } from "@/lib/database.types";
 import { normalizePhone } from "@/lib/phone";
 import { DEFAULT_TEMPLATE, rewardValueLabel } from "@/lib/rewards";
@@ -35,7 +35,7 @@ export async function createRecognition(
     return { error: "El monto de la propina no es válido." };
   }
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   // Optional tip.
   let tipId: string | null = null;
@@ -95,7 +95,7 @@ export async function createRecognition(
 
 /** Guest tapped "leave a Google review": mark the request completed. */
 export async function completeReview(reviewRequestId: string) {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("review_requests")
     .update({ status: "completed", completed_at: new Date().toISOString() })
@@ -113,7 +113,7 @@ export async function submitFeedback(
   const feedback = (formData.get("feedback") as string | null)?.trim() ?? "";
   if (!feedback) return { error: "Contanos brevemente qué podríamos mejorar." };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { error } = await supabase
     .from("review_requests")
     .update({
@@ -129,7 +129,7 @@ export async function submitFeedback(
 
 /** Guest dismissed the review/feedback step. */
 export async function ignoreReview(reviewRequestId: string) {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("review_requests")
     .update({ status: "ignored", completed_at: new Date().toISOString() })
@@ -151,7 +151,7 @@ export type CaptureState = {
 
 /** Emit a reward for a guest from the restaurant's template (FR-014). */
 async function emitReward(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: ReturnType<typeof unsafeAdminClient>,
   restaurantId: string,
   guestId: string,
 ): Promise<EmittedReward | undefined> {
@@ -241,7 +241,7 @@ export async function captureGuest(
   // Normalize the phone to E.164 (omnichannel-ready). Default AR for the pilot.
   const ph = normalizePhone(phone);
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   // FR-012: create if new, update if the email already exists in this restaurant.
   const { data: existing } = await supabase

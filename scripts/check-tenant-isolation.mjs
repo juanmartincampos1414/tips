@@ -25,9 +25,35 @@ const ALLOWLIST = [
   "src/lib/auth.ts", // membership resolution
 ];
 
-// Legacy files still on createAdminClient — drained tier by tier. (Populated at
-// the mechanical rename; empty in Phase 0 since nothing uses unsafeAdminClient.)
-const LEGACY = [];
+// Legacy files still using the raw client directly — to be migrated to tenantDb
+// tier by tier. This list ONLY shrinks. (Populated at the mechanical rename.)
+const LEGACY = [
+  "src/app/actions.ts",
+  "src/app/t/[slug]/[code]/actions.ts",
+  "src/app/w/[pass]/v/actions.ts",
+  "src/app/pay/[ref]/actions.ts",
+  "src/app/pay/[ref]/page.tsx",
+  "src/app/pay/[ref]/return/page.tsx",
+  "src/app/api/export/[type]/route.ts",
+  "src/app/api/webhooks/[provider]/route.ts",
+  "src/app/api/webhooks/resend/route.ts",
+  "src/app/(manager)/campanas/actions.ts",
+  "src/app/(manager)/emails/actions.ts",
+  "src/app/(manager)/emails/activacion/actions.ts",
+  "src/app/(manager)/importar/actions.ts",
+  "src/app/(manager)/integraciones/actions.ts",
+  "src/app/(manager)/pagos/actions.ts",
+  "src/lib/queries.ts",
+  "src/lib/email/readiness.ts",
+  "src/lib/email/send.ts",
+  "src/lib/email/webhook.ts",
+  "src/lib/integrations/events.ts",
+  "src/lib/integrations/manager.ts",
+  "src/lib/integrations/sync.ts",
+  "src/lib/payments/events.ts",
+  "src/lib/payments/queries.ts",
+  "src/lib/payments/service.ts",
+];
 
 const IMPORT_RE = /import\s+[^;]*\bunsafeAdminClient\b[^;]*from\s+["']@\/lib\/supabase\/admin["']/;
 
@@ -44,10 +70,20 @@ function walk(dir) {
 
 const allowed = new Set([...ALLOWLIST, ...LEGACY]);
 const violations = [];
+const reappeared = []; // the legacy name must never come back
 for (const file of walk(SRC)) {
   const rel = relative(ROOT, file);
+  const src = readFileSync(file, "utf8");
+  if (/\bcreateAdminClient\b/.test(src)) reappeared.push(rel);
   if (allowed.has(rel)) continue;
-  if (IMPORT_RE.test(readFileSync(file, "utf8"))) violations.push(rel);
+  if (IMPORT_RE.test(src)) violations.push(rel);
+}
+
+if (reappeared.length) {
+  console.error("\n✖ Tenant Isolation check failed — `createAdminClient` must not exist anymore (use unsafeAdminClient via tenantDb):");
+  for (const r of reappeared) console.error(`  - ${r}`);
+  console.error("");
+  process.exit(1);
 }
 
 if (violations.length) {

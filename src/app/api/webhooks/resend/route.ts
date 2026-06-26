@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/database.types";
 import {
   applyEmailEvent,
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
   if (!mapped || !emailId)
     return NextResponse.json({ ok: true, ignored: true });
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const log = await findLogByProviderId(supabase, emailId);
   if (!log) return NextResponse.json({ ok: true, unmatched: true });
 

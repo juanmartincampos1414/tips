@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import { getCurrentMembership } from "@/lib/auth";
 import {
   contactChannels,
@@ -44,7 +44,7 @@ export async function getNfcInventory(
   restaurantId: string,
   status?: string,
 ): Promise<NfcWithStaff[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   let query = supabase
     .from("nfc_inventory")
     .select("*, staff:assigned_staff_id(name)")
@@ -66,7 +66,7 @@ export type NfcKpis = {
 };
 
 export async function getNfcKpis(restaurantId: string): Promise<NfcKpis> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("nfc_inventory")
     .select("status")
@@ -86,7 +86,7 @@ export async function getNfcKpis(restaurantId: string): Promise<NfcKpis> {
 export async function getStaffWithBand(
   restaurantId: string,
 ): Promise<StaffWithBand[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: staff } = await supabase
     .from("staff")
     .select("*")
@@ -116,7 +116,7 @@ export async function getStaffWithBand(
 export async function getStaffBand(
   staffId: string,
 ): Promise<NfcInventory | null> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("nfc_inventory")
     .select("*")
@@ -137,7 +137,7 @@ export type NfcEventRow = {
 export async function getStaffNfcHistory(
   staffId: string,
 ): Promise<NfcEventRow[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("nfc_events")
     .select("id, event, created_at, nfc_inventory(uid, serial_number)")
@@ -155,7 +155,7 @@ export async function resolvePublicStaff(
   slug: string,
   code: string,
 ): Promise<{ restaurant: Restaurant; staff: Staff } | null> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   const { data: restaurant } = await supabase
     .from("restaurants")
@@ -189,7 +189,7 @@ export async function resolvePublicStaff(
 
 /** Records a Visit for a guest opening a staff profile (FR-005 / AC-006). */
 export async function recordVisit(restaurantId: string, staffId: string) {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("visits").insert({
     restaurant_id: restaurantId,
     staff_id: staffId,
@@ -205,7 +205,7 @@ export async function getCurrentRestaurant(): Promise<Restaurant | null> {
   const membership = await getCurrentMembership();
   if (!membership) return null;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("restaurants")
     .select("*")
@@ -218,7 +218,7 @@ export async function getCurrentRestaurant(): Promise<Restaurant | null> {
 export async function getStaffWithNfc(
   restaurantId: string,
 ): Promise<StaffWithNfc[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("staff")
     .select("*, nfc_tags(*)")
@@ -231,7 +231,7 @@ export async function getStaffWithNfc(
 export async function getStaffById(
   staffId: string,
 ): Promise<StaffWithNfc | null> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("staff")
     .select("*, nfc_tags(*)")
@@ -263,7 +263,7 @@ export async function getStaffMetrics(
   staffIds.forEach((id) => (out[id] = empty()));
   if (staffIds.length === 0) return out;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [{ data: ratings }, { data: tips }, { data: events }] =
     await Promise.all([
       supabase.from("ratings").select("staff_id, rating").in("staff_id", staffIds),
@@ -310,7 +310,7 @@ export type CaptureStats = {
 export async function getCaptureStats(
   restaurantId: string,
 ): Promise<CaptureStats> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [{ count: guests }, { count: events }] = await Promise.all([
     supabase
       .from("guests")
@@ -335,7 +335,7 @@ export type GuestWithStaff = Guest & { staff: { name: string } | null };
 
 /** CRM base — captured guests for a restaurant, newest first. */
 export async function getGuests(restaurantId: string): Promise<GuestWithStaff[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("guests")
     .select("*, staff:last_staff_id(name)")
@@ -353,7 +353,7 @@ export type RewardWithGuest = Reward & {
 
 /** FR-025 (lazy): flip overdue active rewards to expired before reading them. */
 export async function expireDueRewards(restaurantId: string) {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("rewards")
     .update({ status: "expired" })
@@ -365,7 +365,7 @@ export async function expireDueRewards(restaurantId: string) {
 export async function getRewardTemplates(
   restaurantId: string,
 ): Promise<RewardTemplate[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("reward_templates")
     .select("*")
@@ -378,7 +378,7 @@ export async function getRewards(
   restaurantId: string,
 ): Promise<RewardWithGuest[]> {
   await expireDueRewards(restaurantId);
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   // One reward per guest capture → grows with the base; paginate past 1000.
   const data = await fetchAllRows<RewardWithGuest>((f, t) =>
     supabase
@@ -409,7 +409,7 @@ export async function getDashboardKpis(
   restaurantId: string,
 ): Promise<DashboardKpis> {
   await expireDueRewards(restaurantId);
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const head = { count: "exact" as const, head: true };
 
   const [
@@ -499,7 +499,7 @@ export type WalletPassFull = {
 export async function getWalletPass(
   passIdentifier: string,
 ): Promise<WalletPassFull | null> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("wallet_passes")
     .select(
@@ -515,7 +515,7 @@ type Settings = Database["public"]["Tables"]["restaurant_settings"]["Row"];
 export async function getSettings(
   restaurantId: string,
 ): Promise<Settings | null> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("restaurant_settings")
     .select("*")
@@ -530,7 +530,7 @@ export type EmailTemplate =
 export async function getEmailTemplates(
   restaurantId: string,
 ): Promise<EmailTemplate[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("email_templates")
     .select("*")
@@ -549,7 +549,7 @@ export type MemberRow = {
 
 /** Team members of a restaurant, with their login email + linked staff. */
 export async function getMembers(restaurantId: string): Promise<MemberRow[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("restaurant_members")
     .select("id, role, user_id, created_at, staff:staff_id(name)")
@@ -581,7 +581,7 @@ export async function getMembers(restaurantId: string): Promise<MemberRow[]> {
 export async function getStaffOptions(
   restaurantId: string,
 ): Promise<{ id: string; name: string }[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("staff")
     .select("id, name")
@@ -660,7 +660,7 @@ export async function getCrmData(
   restaurantId: string,
 ): Promise<{ guests: CrmGuest[]; kpis: CrmKpis }> {
   const { computeSegment } = await import("@/lib/segments");
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [guests, events, returns, rewards, tags] = await Promise.all([
     fetchAllRows<Guest & { staff: { name: string } | null }>((f, t) =>
       supabase
@@ -795,7 +795,7 @@ export async function getGuestsList(
   restaurantId: string,
 ): Promise<GuestListRow[]> {
   const { computeSegment } = await import("@/lib/segments");
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [{ data: guests }, { data: events }, { data: returns }] =
     await Promise.all([
       supabase
@@ -857,7 +857,7 @@ export type GuestProfile = {
 export async function getGuestProfile(
   guestId: string,
 ): Promise<GuestProfile | null> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: guest } = await supabase
     .from("guests")
     .select("*, staff:last_staff_id(name)")
@@ -951,7 +951,7 @@ export type TimelineItem = {
 export async function getGuestTimeline(
   guestId: string,
 ): Promise<TimelineItem[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [events, reviews, rewards, claims, returns, notes] = await Promise.all([
     supabase
       .from("recognition_events")
@@ -1054,7 +1054,7 @@ type GuestImportRow = Database["public"]["Tables"]["guest_import_rows"]["Row"];
 export async function getImports(
   restaurantId: string,
 ): Promise<GuestImport[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("guest_imports")
     .select("*")
@@ -1067,7 +1067,7 @@ export async function getImport(
   importId: string,
   restaurantId: string,
 ): Promise<GuestImport | null> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("guest_imports")
     .select("*")
@@ -1081,7 +1081,7 @@ export async function getImportRows(
   importId: string,
   limit = 100,
 ): Promise<GuestImportRow[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("guest_import_rows")
     .select("*")
@@ -1108,7 +1108,7 @@ export async function getStaffImpact(
   restaurantId: string,
 ): Promise<StaffImpactRow[]> {
   await syncCampaignConversions(restaurantId);
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [
     { data: staff },
     { data: events },
@@ -1223,7 +1223,7 @@ export type DashboardStats = {
 export async function getDashboardStats(
   restaurantId: string,
 ): Promise<DashboardStats> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   const [{ count: staffCount }, { count: visitCount }] = await Promise.all([
     supabase
@@ -1265,7 +1265,7 @@ type DatedEvent = {
 export async function syncCampaignConversions(
   restaurantId: string,
 ): Promise<void> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: campaigns } = await supabase
     .from("campaigns")
     .select("id, sent_at, attribution_window_days")
@@ -1448,7 +1448,7 @@ export async function getCampaigns(
   restaurantId: string,
 ): Promise<{ campaigns: CampaignListItem[]; intelligence: CampaignIntelligence }> {
   await syncCampaignConversions(restaurantId);
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   // recipients/conversions/audiences scale with campaign audience size (a send
   // to a large segment can be tens of thousands) → paginate past the 1000 cap.
   const [{ data: rows }, { data: templates }, recipients, conversions, audiences] =
@@ -1597,7 +1597,7 @@ export async function getCampaign(
   campaignId: string,
 ): Promise<CampaignDetail | null> {
   await syncCampaignConversions(restaurantId);
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: campaign } = await supabase
     .from("campaigns")
     .select("*")
@@ -1675,7 +1675,7 @@ export type GuestCommunication = {
 export async function getGuestCommunications(
   guestId: string,
 ): Promise<GuestCommunication[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: recs } = await supabase
     .from("campaign_recipients")
     .select("campaign_id, status, channel, campaigns(name, sent_at)")
@@ -1920,7 +1920,7 @@ export async function getRecentEmailLogs(
   restaurantId: string,
   limit = 15,
 ): Promise<EmailLogRow[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("email_logs")
     .select("id, recipient_email, subject, status, provider_message_id, error_message, retry_count, created_at")

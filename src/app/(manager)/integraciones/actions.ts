@@ -6,7 +6,7 @@ import { logAudit, requireOwner } from "@/lib/auth";
 import { emitEvent } from "@/lib/integrations/events";
 import { getAdapter, getProvider } from "@/lib/integrations/registry";
 import { runSync } from "@/lib/integrations/sync";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/database.types";
 
 export type IntegrationActionState = { error?: string; ok?: string };
@@ -22,7 +22,7 @@ export async function connectProvider(formData: FormData): Promise<void> {
   const def = getProvider(provider);
   if (!def) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("connections").upsert(
     {
       restaurant_id: owner.restaurantId,
@@ -58,7 +58,7 @@ export async function connectProvider(formData: FormData): Promise<void> {
 export async function disconnectProvider(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const provider = str(formData, "provider");
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("connections")
     .update({ status: "disconnected" })
@@ -84,7 +84,7 @@ export async function disconnectProvider(formData: FormData): Promise<void> {
 export async function toggleSandbox(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const provider = str(formData, "provider");
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: c } = await supabase
     .from("connections")
     .select("sandbox")
@@ -104,7 +104,7 @@ export async function toggleSandbox(formData: FormData): Promise<void> {
 export async function testConnectionAction(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const provider = str(formData, "provider");
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: c } = await supabase
     .from("connections")
     .select("sandbox")

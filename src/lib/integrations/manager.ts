@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 
 import { PROVIDERS, type ProviderDef } from "./registry";
 import type { ConnectionStatus } from "./types";
@@ -40,7 +40,7 @@ export type IntegrationsView = {
 export async function getIntegrationsView(
   restaurantId: string,
 ): Promise<IntegrationsView> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("connections")
     .select("id, provider, status, sandbox, last_sync, next_sync, last_error, health")
@@ -86,7 +86,7 @@ export async function getSyncJobs(
   restaurantId: string,
   limit = 20,
 ): Promise<SyncJobRow[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data } = await supabase
     .from("sync_jobs")
     .select("id, provider, direction, status, rows_processed, duration_ms, error, created_at")

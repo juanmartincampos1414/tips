@@ -7,7 +7,7 @@ import { isReachable, resolveAudience } from "@/lib/campaigns";
 import { sendGuestEmail } from "@/lib/email/send";
 import { logAudit, requireManager } from "@/lib/auth";
 import { getCrmData, syncCampaignConversions } from "@/lib/queries";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type {
   CampaignChannel,
   CampaignRecipientStatus,
@@ -52,7 +52,7 @@ export async function createCampaign(
 
   const audience = await projectAudience(member.restaurantId, segment, channel);
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data, error } = await supabase
     .from("campaigns")
     .insert({
@@ -87,7 +87,7 @@ export async function sendCampaign(formData: FormData): Promise<void> {
   const id = str(formData, "id");
   if (!id) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: campaign } = await supabase
     .from("campaigns")
     .select("*")
@@ -228,7 +228,7 @@ export async function archiveCampaign(formData: FormData): Promise<void> {
   const id = str(formData, "id");
   if (!id) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("campaigns")
     .update({ status: "archived" })

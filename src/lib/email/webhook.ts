@@ -2,14 +2,14 @@ import "server-only";
 
 import crypto from "node:crypto";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type {
   CampaignRecipientStatus,
   EmailEventType,
   Json,
 } from "@/lib/database.types";
 
-type Admin = ReturnType<typeof createAdminClient>;
+type Admin = ReturnType<typeof unsafeAdminClient>;
 
 // -----------------------------------------------------------------------------
 // Resend webhook signature (Svix scheme). Header set: svix-id, svix-timestamp,

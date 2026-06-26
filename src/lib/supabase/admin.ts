@@ -19,10 +19,3 @@ export function unsafeAdminClient() {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }
-
-/**
- * @deprecated Legacy alias kept so existing call sites keep working during the
- * Tenant Isolation migration. New code must use `tenantDb()`; this alias is
- * removed once all tiers are migrated (Phase 0 → tiers).
- */
-export const createAdminClient = unsafeAdminClient;

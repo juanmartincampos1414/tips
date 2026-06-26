@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import { getMembershipForRestaurant, logAudit } from "@/lib/auth";
 
 /**
@@ -12,7 +12,7 @@ import { getMembershipForRestaurant, logAudit } from "@/lib/auth";
  * R7: a claimed/expired reward cannot be reused.
  */
 export async function claimByPass(passIdentifier: string) {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   const { data: wp } = await supabase
     .from("wallet_passes")

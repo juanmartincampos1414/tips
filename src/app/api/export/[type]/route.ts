@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getCurrentMembership, MANAGER_ROLES } from "@/lib/auth";
 import { toCsv } from "@/lib/csv";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import {
   fetchAllRows,
   getCrmData,
@@ -51,7 +51,7 @@ export async function GET(
       date(r.expiration_date),
     ]);
   } else if (type === "reviews") {
-    const supabase = createAdminClient();
+    const supabase = unsafeAdminClient();
     const data = await fetchAllRows<{
       route: string;
       status: string;
@@ -73,7 +73,7 @@ export async function GET(
       date(r.created_at),
     ]);
   } else if (type === "return_visits") {
-    const supabase = createAdminClient();
+    const supabase = unsafeAdminClient();
     const data = await fetchAllRows<{
       created_at: string;
       guests: { name: string; email: string } | null;

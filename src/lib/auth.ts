@@ -2,7 +2,7 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { Json, Role } from "@/lib/database.types";
 
@@ -30,7 +30,7 @@ export async function getCurrentMembership(): Promise<Membership | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const admin = createAdminClient();
+  const admin = unsafeAdminClient();
   const { data } = await admin
     .from("restaurant_members")
     .select("restaurant_id, role, staff_id")
@@ -55,7 +55,7 @@ export async function getMembershipForRestaurant(
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const admin = createAdminClient();
+  const admin = unsafeAdminClient();
   const { data } = await admin
     .from("restaurant_members")
     .select("role, staff_id")
@@ -101,7 +101,7 @@ export async function logAudit(params: {
   entityId?: string | null;
   metadata?: Json;
 }) {
-  const admin = createAdminClient();
+  const admin = unsafeAdminClient();
   await admin.from("audit_logs").insert({
     restaurant_id: params.restaurantId,
     user_id: params.userId,

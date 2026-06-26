@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 
 import { handlePaymentWebhook } from "@/lib/payments/service";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 
 // Sandbox checkout simulator — each button fires a simulated Mercado Pago
 // webhook (the only path that confirms money), exactly like the real provider.
@@ -29,7 +29,7 @@ export async function rejectSandbox(formData: FormData): Promise<void> {
 export async function cancelSandbox(formData: FormData): Promise<void> {
   const ref = (formData.get("ref") as string) ?? "";
   // Abandonment → expired (recognition stays pending, retry allowed).
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("payments").update({ status: "expired" }).eq("external_reference", ref);
   redirect(`/pay/${ref}/return`);
 }

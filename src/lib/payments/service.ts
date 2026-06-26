@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/database.types";
 
 import { emitPaymentEvent } from "./events";
@@ -15,7 +15,7 @@ import type { BusinessUnit, PaymentEventType, PaymentStatus, TipSource } from ".
 // external_reference + provider_payment_id. The Core calls these, never MP.
 // =============================================================================
 
-type Admin = ReturnType<typeof createAdminClient>;
+type Admin = ReturnType<typeof unsafeAdminClient>;
 
 export type CreateTipResult = {
   ok: boolean;
@@ -37,7 +37,7 @@ export async function createTipPayment(params: {
   baseUrl: string;
   description?: string;
 }): Promise<CreateTipResult> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const provider = getPaymentProvider();
   const externalReference = randomUUID();
 
@@ -110,7 +110,7 @@ const EVENT_FOR: Record<PaymentStatus, PaymentEventType | null> = {
  * staff settlement. Never trust the redirect; this is the source of truth.
  */
 export async function handlePaymentWebhook(payload: unknown): Promise<{ ok: boolean; message: string }> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const provider = getPaymentProvider();
   const parsed = await provider.webhook(payload);
   if (!parsed.ok || !parsed.status)
@@ -179,7 +179,7 @@ async function onApproved(
 
 /** Retry: re-query the provider for the truth + record the attempt. Idempotent. */
 export async function retryPayment(restaurantId: string, paymentId: string): Promise<{ ok: boolean; message: string }> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: payment } = await supabase
     .from("payments")
     .select("*")
@@ -209,7 +209,7 @@ export async function retryPayment(restaurantId: string, paymentId: string): Pro
 }
 
 export async function refundPayment(restaurantId: string, paymentId: string): Promise<{ ok: boolean; message: string }> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: payment } = await supabase
     .from("payments")
     .select("id, provider_payment_id, status")

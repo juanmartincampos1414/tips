@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 
 import { emitEvent } from "./events";
 import { getAdapter } from "./registry";
@@ -26,7 +26,7 @@ export async function runSync(
   connectionId: string,
   direction: SyncDirection = "inbound",
 ): Promise<RunSyncResult> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: conn } = await supabase
     .from("connections")
     .select("id, provider, status, sandbox")
@@ -97,7 +97,7 @@ export async function runSync(
 }
 
 async function finishFailed(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: ReturnType<typeof unsafeAdminClient>,
   restaurantId: string,
   connectionId: string,
   provider: string,

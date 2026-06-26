@@ -1,7 +1,7 @@
 import "server-only";
 
 import { fetchAllRows } from "@/lib/queries";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 
 import { getPaymentProvider } from "./mercadopago";
 
@@ -48,7 +48,7 @@ export type PaymentDashboard = {
 export async function getPaymentDashboard(
   restaurantId: string,
 ): Promise<PaymentDashboard> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [payments, staffRows, health] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase
@@ -144,7 +144,7 @@ export type StaffTips = {
 };
 
 export async function getStaffTips(restaurantId: string): Promise<StaffTips[]> {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const [payments, staffRows] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
       supabase

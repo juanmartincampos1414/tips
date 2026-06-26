@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit, requireManager, requireOwner } from "@/lib/auth";
 import { getCurrentRestaurant } from "@/lib/queries";
@@ -27,7 +27,7 @@ async function uploadMedia(
 ): Promise<string | null> {
   if (!(file instanceof File) || file.size === 0) return null;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
   const path = `${prefix}/${crypto.randomUUID()}.${ext}`;
 
@@ -58,7 +58,7 @@ export async function createRestaurant(
     fieldErrors.email = "Email inválido.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   // Ensure a unique slug derived from the name.
   const base = slugify(name) || "restaurante";
@@ -151,7 +151,7 @@ export async function createStaff(
     return { error: (e as Error).message };
   }
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: created, error } = await supabase
     .from("staff")
     .insert({
@@ -189,7 +189,7 @@ export async function archiveStaff(formData: FormData): Promise<void> {
   const id = str(formData, "id");
   if (!id) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("staff").update({ status: "archived" }).eq("id", id);
 
   await logAudit({
@@ -233,7 +233,7 @@ export async function createRewardTemplate(
     fieldErrors.expiration_days = "Días inválidos.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: tpl, error } = await supabase
     .from("reward_templates")
     .insert({
@@ -272,7 +272,7 @@ export async function claimReward(formData: FormData): Promise<void> {
   const rewardId = str(formData, "reward_id");
   if (!rewardId) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: reward } = await supabase
     .from("rewards")
     .select("id, guest_id, restaurant_id, status")
@@ -333,7 +333,7 @@ export async function createMember(
     fieldErrors.role = "Elegí un rol.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   const { data: created, error: userErr } = await supabase.auth.admin.createUser({
     email,
@@ -388,7 +388,7 @@ export async function updateSettings(
   if (replyTo && !emailRe.test(replyTo))
     return { fieldErrors: { reply_to_email: "Email inválido." } };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { error } = await supabase
     .from("restaurant_settings")
     .upsert(
@@ -427,7 +427,7 @@ async function logNfcEvent(
   event: "created" | "assigned" | "replaced" | "unassigned" | "lost" | "damaged" | "archived",
   userId: string,
 ) {
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("nfc_events").insert({
     nfc_id: nfcId,
     restaurant_id: restaurantId,
@@ -450,7 +450,7 @@ export async function createNfc(
   if (!uid) fieldErrors.uid = "UID obligatorio.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: band, error } = await supabase
     .from("nfc_inventory")
     .insert({ restaurant_id: member.restaurantId, serial_number: serial, uid, status: "stock" })
@@ -482,7 +482,7 @@ export async function assignNfcBand(formData: FormData): Promise<void> {
   const staffId = str(formData, "staff_id");
   if (!nfcId || !staffId) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: band } = await supabase
     .from("nfc_inventory")
     .select("id, status, restaurant_id")
@@ -541,7 +541,7 @@ export async function markNfcStatus(formData: FormData): Promise<void> {
   const status = str(formData, "status");
   if (!nfcId || !["lost", "damaged", "archived"].includes(status)) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: band } = await supabase
     .from("nfc_inventory")
     .select("id, restaurant_id, assigned_staff_id")
@@ -581,7 +581,7 @@ export async function addGuestNote(formData: FormData): Promise<void> {
   const body = str(formData, "body");
   if (!guestId || !body) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase.from("guest_notes").insert({
     guest_id: guestId,
     restaurant_id: member.restaurantId,
@@ -604,7 +604,7 @@ export async function addGuestTag(formData: FormData): Promise<void> {
   const tag = str(formData, "tag");
   if (!guestId || !tag) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("guest_tags")
     .insert({
@@ -632,7 +632,7 @@ export async function removeGuestTag(formData: FormData): Promise<void> {
   const guestId = str(formData, "guest_id");
   if (!tagId) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("guest_tags")
     .delete()

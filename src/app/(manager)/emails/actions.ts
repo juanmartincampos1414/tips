@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { logAudit, requireManager, requireOwner } from "@/lib/auth";
 import { sendTestEmail } from "@/lib/email/send";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 
 export type EmailActionState = {
   error?: string;
@@ -34,7 +34,7 @@ export async function createTemplate(
   if (!body) fieldErrors.body = "Escribí el cuerpo.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data, error } = await supabase
     .from("email_templates")
     .insert({
@@ -74,7 +74,7 @@ export async function updateTemplate(
   if (!id) return { error: "Falta el template." };
 
   const allowed = ["draft", "active", "archived"];
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { error } = await supabase
     .from("email_templates")
     .update({
@@ -105,7 +105,7 @@ export async function archiveTemplate(formData: FormData): Promise<void> {
   const id = str(formData, "id");
   if (!id) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   await supabase
     .from("email_templates")
     .update({ status: "archived" })

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { fetchAllRows } from "@/lib/queries";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 
 import { emailFlags, resendListDomains } from "./provider";
 
@@ -49,7 +49,7 @@ export async function getEmailReadiness(
   restaurantId: string,
 ): Promise<EmailReadiness> {
   const flags = emailFlags();
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   // logs/events scale with sends → paginate past the 1000 cap for true health.
   const [{ data: settings }, logs, events, domains] = await Promise.all([

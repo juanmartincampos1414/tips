@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 import { logAudit, requireManager } from "@/lib/auth";
 import { countryNameToIso, normalizePhone } from "@/lib/phone";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { ImportRowAction, Json } from "@/lib/database.types";
 import {
   mapHeaders,
@@ -59,7 +59,7 @@ export async function previewImport(
       error: "No se detectaron columnas de nombre/email/teléfono en el archivo.",
     };
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
 
   // Existing guests for dedup (email + phone digits → id). Paginated so dedup
   // covers the WHOLE base, not just the first 1000.
@@ -173,7 +173,7 @@ export async function commitImport(formData: FormData): Promise<void> {
   const importId = (formData.get("import_id") as string | null)?.trim();
   if (!importId) return;
 
-  const supabase = createAdminClient();
+  const supabase = unsafeAdminClient();
   const { data: imp } = await supabase
     .from("guest_imports")
     .select("id, status, restaurant_id")
