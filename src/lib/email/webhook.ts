@@ -2,14 +2,12 @@ import "server-only";
 
 import crypto from "node:crypto";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import type {
   CampaignRecipientStatus,
   EmailEventType,
   Json,
 } from "@/lib/database.types";
-
-type Admin = ReturnType<typeof unsafeAdminClient>;
 
 // -----------------------------------------------------------------------------
 // Resend webhook signature (Svix scheme). Header set: svix-id, svix-timestamp,
@@ -77,9 +75,8 @@ const RECIPIENT_RANK: Record<string, number> = {
   clicked: 3,
 };
 
-type LogRow = {
+export type EmailLogRef = {
   id: string;
-  restaurant_id: string;
   guest_id: string | null;
 };
 
@@ -87,15 +84,21 @@ type LogRow = {
  * Apply one email event: record it, advance the email_log + campaign_recipient
  * lifecycle, and suppress the guest on a hard bounce / complaint. Shared by the
  * live webhook and the testing utility so both exercise the exact same path.
+ *
+ * `restaurantId` scopes every write; `log` MUST have been resolved within that
+ * tenant (the Resend webhook resolves it via resolveEmailLogByProviderId; the
+ * simulator reads it scoped). campaign_recipients is reached by its
+ * tenant-unique email_log_id via childMatch/childUpdate.
  */
 export async function applyEmailEvent(
-  supabase: Admin,
-  log: LogRow,
+  restaurantId: string,
+  log: EmailLogRef,
   eventType: EmailEventType,
   raw?: Json,
 ): Promise<void> {
-  await supabase.from("email_events").insert({
-    restaurant_id: log.restaurant_id,
+  const db = tenantDb(restaurantId);
+
+  await db.insert("email_events", {
     guest_id: log.guest_id,
     email_log_id: log.id,
     event_type: eventType,
@@ -108,16 +111,17 @@ export async function applyEmailEvent(
   // email_logs: a bounce/complaint marks the send failed; delivery/open/click
   // never downgrade a 'sent' log.
   if (isFailure)
-    await supabase
-      .from("email_logs")
-      .update({ status: "failed", error_message: `Resend: ${eventType}` })
+    await db
+      .update("email_logs", { status: "failed", error_message: `Resend: ${eventType}` })
       .eq("id", log.id);
 
   // campaign_recipients linked to this log: escalate status + stamp timestamps.
-  const { data: recs } = await supabase
-    .from("campaign_recipients")
-    .select("id, status")
-    .eq("email_log_id", log.id);
+  // CHILD reached by its tenant-unique email_log_id (derived from the scoped log).
+  const { data: recs } = (await db.childMatch(
+    "campaign_recipients",
+    { email_log_id: log.id },
+    "id, status",
+  )) as { data: { id: string; status: string }[] | null };
   for (const r of recs ?? []) {
     const patch: {
       status?: CampaignRecipientStatus;
@@ -138,26 +142,10 @@ export async function applyEmailEvent(
       if (eventType === "clicked") patch.clicked_at = now;
     }
     if (Object.keys(patch).length)
-      await supabase.from("campaign_recipients").update(patch).eq("id", r.id);
+      await db.childUpdate("campaign_recipients", { id: r.id }, patch);
   }
 
   // Suppression: stop emailing a guest that bounced or complained.
   if (isFailure && log.guest_id)
-    await supabase
-      .from("guests")
-      .update({ marketing_consent: false })
-      .eq("id", log.guest_id);
-}
-
-/** Resolve an email_log by the provider message id Resend sends in events. */
-export async function findLogByProviderId(
-  supabase: Admin,
-  providerMessageId: string,
-): Promise<LogRow | null> {
-  const { data } = await supabase
-    .from("email_logs")
-    .select("id, restaurant_id, guest_id")
-    .eq("provider_message_id", providerMessageId)
-    .maybeSingle();
-  return data ?? null;
+    await db.update("guests", { marketing_consent: false }).eq("id", log.guest_id);
 }

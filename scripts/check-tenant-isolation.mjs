@@ -33,18 +33,13 @@ const LEGACY = [
   "src/app/w/[pass]/v/actions.ts",
   "src/app/api/export/[type]/route.ts",
   "src/app/api/webhooks/[provider]/route.ts",
-  "src/app/api/webhooks/resend/route.ts",
-  // Tier 3 (campaigns) Commit B drained: campanas/actions + emails/actions left.
-  // Commit C will drain emails/activacion, email/{send,webhook,readiness},
-  // webhooks/resend. queries.ts stays — other domains (rewards/recognition/
-  // staff/nfc/dashboards) still read via unsafe.
-  "src/app/(manager)/emails/activacion/actions.ts",
+  // Tier 3 (campaigns) fully drained: campanas/actions, emails/actions (B) +
+  // emails/activacion, email/{send,webhook,readiness}, webhooks/resend (C) all
+  // left. queries.ts stays — other domains (rewards/recognition/staff/nfc/
+  // dashboards) still read via unsafe.
   "src/app/(manager)/importar/actions.ts",
   "src/app/(manager)/integraciones/actions.ts",
   "src/lib/queries.ts",
-  "src/lib/email/readiness.ts",
-  "src/lib/email/send.ts",
-  "src/lib/email/webhook.ts",
   "src/lib/integrations/events.ts",
   "src/lib/integrations/manager.ts",
   "src/lib/integrations/sync.ts",

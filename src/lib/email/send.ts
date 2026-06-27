@@ -1,12 +1,10 @@
 import "server-only";
 
 import { logAudit } from "@/lib/auth";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb, type TenantDb } from "@/lib/tenant/db";
 import type { EmailLogStatus } from "@/lib/database.types";
 
 import { EMAIL_NOT_CONFIGURED, getEmailProvider } from "./provider";
-
-type Admin = ReturnType<typeof unsafeAdminClient>;
 
 export type SendOutcome = {
   status: EmailLogStatus;
@@ -22,14 +20,9 @@ type EmailSettings = {
   email_enabled: boolean;
 };
 
-async function loadSettings(
-  supabase: Admin,
-  restaurantId: string,
-): Promise<EmailSettings> {
-  const { data } = await supabase
-    .from("restaurant_settings")
-    .select("sender_name, sender_email, reply_to_email, email_enabled")
-    .eq("restaurant_id", restaurantId)
+async function loadSettings(db: TenantDb): Promise<EmailSettings> {
+  const { data } = await db
+    .select("restaurant_settings", "sender_name, sender_email, reply_to_email, email_enabled")
     .maybeSingle();
   return {
     sender_name: data?.sender_name ?? null,
@@ -41,19 +34,16 @@ async function loadSettings(
 
 /** Write the per-send log row (the comms audit trail). */
 async function createLog(
-  supabase: Admin,
+  db: TenantDb,
   row: {
-    restaurantId: string;
     guestId: string | null;
     templateId: string | null;
     to: string;
     subject: string;
   },
 ): Promise<string | null> {
-  const { data } = await supabase
-    .from("email_logs")
-    .insert({
-      restaurant_id: row.restaurantId,
+  const { data } = await db
+    .insert("email_logs", {
       guest_id: row.guestId,
       template_id: row.templateId,
       recipient_email: row.to,
@@ -62,11 +52,11 @@ async function createLog(
     })
     .select("id")
     .single();
-  return data?.id ?? null;
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 async function finalize(
-  supabase: Admin,
+  db: TenantDb,
   logId: string | null,
   patch: {
     status: EmailLogStatus;
@@ -75,9 +65,8 @@ async function finalize(
   },
 ) {
   if (!logId) return;
-  await supabase
-    .from("email_logs")
-    .update({
+  await db
+    .update("email_logs", {
       status: patch.status,
       provider_message_id: patch.provider_message_id ?? null,
       error_message: patch.error_message ?? null,
@@ -91,9 +80,8 @@ async function finalize(
  * + emit the `sent` lifecycle event. Never throws; always returns an outcome.
  */
 async function dispatch(
-  supabase: Admin,
+  db: TenantDb,
   params: {
-    restaurantId: string;
     guestId: string | null;
     templateId: string | null;
     to: string;
@@ -103,8 +91,7 @@ async function dispatch(
   },
 ): Promise<SendOutcome> {
   const provider = getEmailProvider();
-  const logId = await createLog(supabase, {
-    restaurantId: params.restaurantId,
+  const logId = await createLog(db, {
     guestId: params.guestId,
     templateId: params.templateId,
     to: params.to,
@@ -113,12 +100,12 @@ async function dispatch(
 
   // No provider key → stay in mock/disabled mode, don't fail loudly.
   if (!provider.configured) {
-    await finalize(supabase, logId, { status: "skipped", error_message: EMAIL_NOT_CONFIGURED });
+    await finalize(db, logId, { status: "skipped", error_message: EMAIL_NOT_CONFIGURED });
     return { status: "skipped", logId, error: EMAIL_NOT_CONFIGURED, providerConfigured: false };
   }
   if (!params.settings.sender_email) {
     const error = "Falta configurar el remitente (sender_email).";
-    await finalize(supabase, logId, { status: "skipped", error_message: error });
+    await finalize(db, logId, { status: "skipped", error_message: error });
     return { status: "skipped", logId, error, providerConfigured: true };
   }
 
@@ -128,9 +115,8 @@ async function dispatch(
 
   // In-flight: pending → processing (lifecycle is observable even mid-send).
   if (logId)
-    await supabase
-      .from("email_logs")
-      .update({ status: "processing", last_attempt_at: new Date().toISOString() })
+    await db
+      .update("email_logs", { status: "processing", last_attempt_at: new Date().toISOString() })
       .eq("id", logId);
 
   const result = await provider.send({
@@ -142,13 +128,12 @@ async function dispatch(
   });
 
   if (result.ok) {
-    await finalize(supabase, logId, {
+    await finalize(db, logId, {
       status: "sent",
       provider_message_id: result.messageId ?? null,
     });
     if (logId)
-      await supabase.from("email_events").insert({
-        restaurant_id: params.restaurantId,
+      await db.insert("email_events", {
         guest_id: params.guestId,
         email_log_id: logId,
         event_type: "sent",
@@ -156,7 +141,7 @@ async function dispatch(
     return { status: "sent", logId, providerConfigured: true };
   }
 
-  await finalize(supabase, logId, { status: "failed", error_message: result.error });
+  await finalize(db, logId, { status: "failed", error_message: result.error });
   return { status: "failed", logId, error: result.error, providerConfigured: true };
 }
 
@@ -178,8 +163,8 @@ export async function sendGuestEmail(params: {
   html: string;
   templateId?: string | null;
 }): Promise<SendOutcome> {
-  const supabase = unsafeAdminClient();
-  const settings = await loadSettings(supabase, params.restaurantId);
+  const db = tenantDb(params.restaurantId);
+  const settings = await loadSettings(db);
 
   let block: string | null = null;
   if (!settings.email_enabled) block = "Email deshabilitado para el restaurante.";
@@ -187,19 +172,17 @@ export async function sendGuestEmail(params: {
   else if (!params.guest.marketing_consent) block = "El cliente no dio consentimiento.";
 
   if (block) {
-    const logId = await createLog(supabase, {
-      restaurantId: params.restaurantId,
+    const logId = await createLog(db, {
       guestId: params.guest.id,
       templateId: params.templateId ?? null,
       to: params.guest.email ?? "—",
       subject: params.subject,
     });
-    await finalize(supabase, logId, { status: "skipped", error_message: block });
+    await finalize(db, logId, { status: "skipped", error_message: block });
     return { status: "skipped", logId, error: block, providerConfigured: getEmailProvider().configured };
   }
 
-  return dispatch(supabase, {
-    restaurantId: params.restaurantId,
+  return dispatch(db, {
     guestId: params.guest.id,
     templateId: params.templateId ?? null,
     to: params.guest.email!,
@@ -221,11 +204,10 @@ export async function sendTestEmail(params: {
   subject: string;
   html: string;
 }): Promise<SendOutcome> {
-  const supabase = unsafeAdminClient();
-  const settings = await loadSettings(supabase, params.restaurantId);
+  const db = tenantDb(params.restaurantId);
+  const settings = await loadSettings(db);
 
-  const outcome = await dispatch(supabase, {
-    restaurantId: params.restaurantId,
+  const outcome = await dispatch(db, {
     guestId: null,
     templateId: null,
     to: params.to,
@@ -255,30 +237,41 @@ export async function retryEmail(
   restaurantId: string,
   logId: string,
 ): Promise<SendOutcome> {
-  const supabase = unsafeAdminClient();
-  const { data: log } = await supabase
-    .from("email_logs")
-    .select("id, recipient_email, subject, template_id, status, retry_count, guest_id")
+  const db = tenantDb(restaurantId);
+  const { data: log } = (await db
+    .select(
+      "email_logs",
+      "id, recipient_email, subject, template_id, status, retry_count, guest_id",
+    )
     .eq("id", logId)
-    .eq("restaurant_id", restaurantId)
-    .maybeSingle();
+    .maybeSingle()) as {
+    data:
+      | {
+          id: string;
+          recipient_email: string;
+          subject: string;
+          template_id: string | null;
+          status: EmailLogStatus;
+          retry_count: number | null;
+          guest_id: string | null;
+        }
+      | null;
+  };
   if (!log) return { status: "failed", logId: null, error: "Log inexistente", providerConfigured: false };
   if (log.status !== "failed")
     return { status: log.status, logId, error: "Sólo se reintentan envíos fallidos.", providerConfigured: true };
   if (!log.template_id)
     return { status: "failed", logId, error: "Sin plantilla: no hay cuerpo para reintentar.", providerConfigured: true };
 
-  const settings = await loadSettings(supabase, restaurantId);
+  const settings = await loadSettings(db);
   const provider = getEmailProvider();
-  const { data: tpl } = await supabase
-    .from("email_templates")
-    .select("subject, body")
+  const { data: tpl } = (await db
+    .select("email_templates", "subject, body")
     .eq("id", log.template_id)
-    .maybeSingle();
+    .maybeSingle()) as { data: { subject: string; body: string } | null };
 
-  await supabase
-    .from("email_logs")
-    .update({
+  await db
+    .update("email_logs", {
       status: "processing",
       retry_count: (log.retry_count ?? 0) + 1,
       last_attempt_at: new Date().toISOString(),
@@ -287,7 +280,7 @@ export async function retryEmail(
 
   if (!provider.configured || !settings.sender_email) {
     const error = !provider.configured ? EMAIL_NOT_CONFIGURED : "Falta el remitente.";
-    await finalize(supabase, logId, { status: "skipped", error_message: error });
+    await finalize(db, logId, { status: "skipped", error_message: error });
     return { status: "skipped", logId, error, providerConfigured: provider.configured };
   }
 
@@ -303,9 +296,9 @@ export async function retryEmail(
   });
 
   if (result.ok) {
-    await finalize(supabase, logId, { status: "sent", provider_message_id: result.messageId ?? null });
+    await finalize(db, logId, { status: "sent", provider_message_id: result.messageId ?? null });
     return { status: "sent", logId, providerConfigured: true };
   }
-  await finalize(supabase, logId, { status: "failed", error_message: result.error });
+  await finalize(db, logId, { status: "failed", error_message: result.error });
   return { status: "failed", logId, error: result.error, providerConfigured: true };
 }

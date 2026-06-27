@@ -1,10 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { resolveEmailLogByProviderId } from "@/lib/tenant/resolve";
 import type { Json } from "@/lib/database.types";
 import {
   applyEmailEvent,
-  findLogByProviderId,
   mapResendEvent,
   verifySvixSignature,
 } from "@/lib/email/webhook";
@@ -57,10 +56,11 @@ export async function POST(req: NextRequest) {
   if (!mapped || !emailId)
     return NextResponse.json({ ok: true, ignored: true });
 
-  const supabase = unsafeAdminClient();
-  const log = await findLogByProviderId(supabase, emailId);
+  // Resolve the email_log by the provider message id (the only unscoped read),
+  // then operate strictly within its tenant.
+  const log = await resolveEmailLogByProviderId(emailId);
   if (!log) return NextResponse.json({ ok: true, unmatched: true });
 
-  await applyEmailEvent(supabase, log, mapped, event as unknown as Json);
+  await applyEmailEvent(log.restaurant_id, log, mapped, event as unknown as Json);
   return NextResponse.json({ ok: true });
 }

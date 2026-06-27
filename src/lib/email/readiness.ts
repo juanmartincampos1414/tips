@@ -1,7 +1,7 @@
 import "server-only";
 
 import { fetchAllRows } from "@/lib/queries";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 
 import { emailFlags, resendListDomains } from "./provider";
 
@@ -49,20 +49,16 @@ export async function getEmailReadiness(
   restaurantId: string,
 ): Promise<EmailReadiness> {
   const flags = emailFlags();
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
 
   // logs/events scale with sends → paginate past the 1000 cap for true health.
   const [{ data: settings }, logs, events, domains] = await Promise.all([
-    supabase
-      .from("restaurant_settings")
-      .select("sender_email, email_enabled")
-      .eq("restaurant_id", restaurantId)
-      .maybeSingle(),
+    db.select("restaurant_settings", "sender_email, email_enabled").maybeSingle(),
     fetchAllRows<{ status: string }>((f, t) =>
-      supabase.from("email_logs").select("status").eq("restaurant_id", restaurantId).range(f, t),
+      db.select("email_logs", "status").range(f, t),
     ),
     fetchAllRows<{ event_type: string }>((f, t) =>
-      supabase.from("email_events").select("event_type").eq("restaurant_id", restaurantId).range(f, t),
+      db.select("email_events", "event_type").range(f, t),
     ),
     resendListDomains(),
   ]);

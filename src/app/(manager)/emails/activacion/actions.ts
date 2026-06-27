@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/auth";
 import { applyEmailEvent } from "@/lib/email/webhook";
 import { retryEmail } from "@/lib/email/send";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import type { EmailEventType } from "@/lib/database.types";
 
 const VALID_EVENTS: EmailEventType[] = [
@@ -31,9 +31,7 @@ function str(fd: FormData, k: string) {
 export async function createTestLog(formData: FormData): Promise<void> {
   const member = await requireManager();
   const to = str(formData, "to") || "test@tips.local";
-  const supabase = unsafeAdminClient();
-  await supabase.from("email_logs").insert({
-    restaurant_id: member.restaurantId,
+  await tenantDb(member.restaurantId).insert("email_logs", {
     recipient_email: to,
     subject: "Test de tracking · Tips",
     status: "sent",
@@ -53,16 +51,13 @@ export async function simulateEvent(formData: FormData): Promise<void> {
   const event = str(formData, "event") as EmailEventType;
   if (!logId || !VALID_EVENTS.includes(event)) return;
 
-  const supabase = unsafeAdminClient();
-  const { data: log } = await supabase
-    .from("email_logs")
-    .select("id, restaurant_id, guest_id")
+  const { data: log } = (await tenantDb(member.restaurantId)
+    .select("email_logs", "id, guest_id")
     .eq("id", logId)
-    .eq("restaurant_id", member.restaurantId)
-    .maybeSingle();
+    .maybeSingle()) as { data: { id: string; guest_id: string | null } | null };
   if (!log) return;
 
-  await applyEmailEvent(supabase, log, event, { simulated: true, by: member.userId });
+  await applyEmailEvent(member.restaurantId, log, event, { simulated: true, by: member.userId });
   revalidatePath("/emails/activacion");
 }
 
