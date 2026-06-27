@@ -234,11 +234,8 @@ export async function createRewardTemplate(
     fieldErrors.expiration_days = "Días inválidos.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = unsafeAdminClient();
-  const { data: tpl, error } = await supabase
-    .from("reward_templates")
-    .insert({
-      restaurant_id: restaurant.id,
+  const { data: tpl, error } = await tenantDb(restaurant.id)
+    .insert("reward_templates", {
       title,
       reward_type: rewardType as
         | "cashback_percentage"
@@ -273,33 +270,29 @@ export async function claimReward(formData: FormData): Promise<void> {
   const rewardId = str(formData, "reward_id");
   if (!rewardId) return;
 
-  const supabase = unsafeAdminClient();
-  const { data: reward } = await supabase
-    .from("rewards")
-    .select("id, guest_id, restaurant_id, status")
+  // Scoped to the manager's tenant — reading by id alone would let a manager
+  // claim another restaurant's reward (closes that isolation gap).
+  const db = tenantDb(member.restaurantId);
+  const { data: reward } = (await db
+    .select("rewards", "id, guest_id, status")
     .eq("id", rewardId)
-    .maybeSingle();
+    .maybeSingle()) as { data: { id: string; guest_id: string; status: string } | null };
 
   // R7: a redeemed reward can't be reused.
   if (!reward || reward.status !== "active") return;
 
-  await supabase
-    .from("rewards")
-    .update({ status: "claimed" })
-    .eq("id", reward.id);
-  await supabase.from("reward_claims").insert({
+  await db.update("rewards", { status: "claimed" }).eq("id", reward.id);
+  await db.insert("reward_claims", {
     reward_id: reward.id,
     guest_id: reward.guest_id,
-    restaurant_id: reward.restaurant_id,
   });
-  await supabase.from("return_visits").insert({
+  await db.insert("return_visits", {
     guest_id: reward.guest_id,
     reward_id: reward.id,
-    restaurant_id: reward.restaurant_id,
   });
 
   await logAudit({
-    restaurantId: reward.restaurant_id,
+    restaurantId: member.restaurantId,
     userId: member.userId,
     action: "reward.claimed",
     entityType: "reward",

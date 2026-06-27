@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 
-import { getWalletPass } from "@/lib/queries";
+import { resolveWalletPass } from "@/lib/tenant/resolve";
 import { qrSvg } from "@/lib/qr";
 import { effectiveRewardStatus, rewardValueLabel } from "@/lib/rewards";
 
@@ -21,7 +21,7 @@ export default async function WalletPassPage({
   params: Promise<{ pass: string }>;
 }) {
   const { pass } = await params;
-  const data = await getWalletPass(pass);
+  const data = await resolveWalletPass(pass);
   if (!data || !data.rewards || !data.restaurants) notFound();
 
   const { rewards: reward, restaurants: restaurant, guests: guest } = data;

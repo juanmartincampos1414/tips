@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { getMembershipForRestaurant } from "@/lib/auth";
-import { getWalletPass } from "@/lib/queries";
+import { resolveWalletPass } from "@/lib/tenant/resolve";
 import { effectiveRewardStatus, rewardValueLabel } from "@/lib/rewards";
 
 import { claimByPass } from "./actions";
@@ -22,7 +22,7 @@ export default async function ClaimValidationPage({
   params: Promise<{ pass: string }>;
 }) {
   const { pass } = await params;
-  const data = await getWalletPass(pass);
+  const data = await resolveWalletPass(pass);
   if (!data || !data.rewards) notFound();
 
   const { rewards: reward, guests: guest, restaurants: restaurant } = data;

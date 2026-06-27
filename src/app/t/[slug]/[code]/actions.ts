@@ -3,7 +3,7 @@
 import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { ReviewRoute } from "@/lib/database.types";
 import { normalizePhone } from "@/lib/phone";
-import { tenantDb } from "@/lib/tenant/db";
+import { tenantDb, type TenantDb } from "@/lib/tenant/db";
 import { DEFAULT_TEMPLATE, rewardValueLabel } from "@/lib/rewards";
 
 export type RecognitionState = {
@@ -152,24 +152,20 @@ export type CaptureState = {
 
 /** Emit a reward for a guest from the restaurant's template (FR-014). */
 async function emitReward(
-  supabase: ReturnType<typeof unsafeAdminClient>,
-  restaurantId: string,
+  db: TenantDb,
   guestId: string,
 ): Promise<EmittedReward | undefined> {
   // Use the restaurant's active template, or create a default one if none.
-  let { data: template } = await supabase
-    .from("reward_templates")
-    .select("*")
-    .eq("restaurant_id", restaurantId)
+  let { data: template } = await db
+    .select("reward_templates", "*")
     .eq("status", "active")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (!template) {
-    const { data: created } = await supabase
-      .from("reward_templates")
-      .insert({ restaurant_id: restaurantId, ...DEFAULT_TEMPLATE })
+    const { data: created } = await db
+      .insert("reward_templates", { ...DEFAULT_TEMPLATE })
       .select("*")
       .single();
     template = created;
@@ -180,11 +176,9 @@ async function emitReward(
     Date.now() + template.expiration_days * 24 * 60 * 60 * 1000,
   ).toISOString();
 
-  const { data: reward, error } = await supabase
-    .from("rewards")
-    .insert({
+  const { data: reward, error } = await db
+    .insert("rewards", {
       guest_id: guestId,
-      restaurant_id: restaurantId,
       template_id: template.id,
       title: template.title,
       reward_type: template.reward_type,
@@ -199,10 +193,9 @@ async function emitReward(
 
   // FR-019: generate a wallet pass (web provider) with a dynamic QR token.
   const passIdentifier = crypto.randomUUID();
-  await supabase.from("wallet_passes").insert({
+  await db.insert("wallet_passes", {
     guest_id: guestId,
     reward_id: reward.id,
-    restaurant_id: restaurantId,
     wallet_provider: "web",
     wallet_pass_url: `/w/${passIdentifier}`,
     pass_identifier: passIdentifier,
@@ -289,7 +282,7 @@ export async function captureGuest(
     .eq("id", recognitionEventId);
 
   // FR-014: emit a reward automatically.
-  const reward = await emitReward(supabase, restaurantId, guestId);
+  const reward = await emitReward(db, guestId);
 
   return { done: true, reward };
 }

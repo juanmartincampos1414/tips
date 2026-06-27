@@ -30,7 +30,9 @@ const ALLOWLIST = [
 const LEGACY = [
   "src/app/actions.ts",
   "src/app/t/[slug]/[code]/actions.ts",
-  "src/app/w/[pass]/v/actions.ts",
+  // Tier 4 (rewards): w/[pass]/v/actions left (claimByPass via resolver+tenantDb).
+  // actions.ts + t/[slug]/[code]/actions stay — other domains (createMember,
+  // recognition_events T5) still use unsafe.
   "src/app/api/export/[type]/route.ts",
   "src/app/api/webhooks/[provider]/route.ts",
   // Tier 3 (campaigns) fully drained: campanas/actions, emails/actions (B) +

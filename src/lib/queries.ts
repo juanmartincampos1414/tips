@@ -354,11 +354,8 @@ export type RewardWithGuest = Reward & {
 
 /** FR-025 (lazy): flip overdue active rewards to expired before reading them. */
 export async function expireDueRewards(restaurantId: string) {
-  const supabase = unsafeAdminClient();
-  await supabase
-    .from("rewards")
-    .update({ status: "expired" })
-    .eq("restaurant_id", restaurantId)
+  await tenantDb(restaurantId)
+    .update("rewards", { status: "expired" })
     .eq("status", "active")
     .lt("expiration_date", new Date().toISOString());
 }
@@ -366,26 +363,21 @@ export async function expireDueRewards(restaurantId: string) {
 export async function getRewardTemplates(
   restaurantId: string,
 ): Promise<RewardTemplate[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("reward_templates")
-    .select("*")
-    .eq("restaurant_id", restaurantId)
+  const { data } = await tenantDb(restaurantId)
+    .select("reward_templates", "*")
     .order("created_at", { ascending: false });
-  return data ?? [];
+  return (data as RewardTemplate[] | null) ?? [];
 }
 
 export async function getRewards(
   restaurantId: string,
 ): Promise<RewardWithGuest[]> {
   await expireDueRewards(restaurantId);
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   // One reward per guest capture → grows with the base; paginate past 1000.
   const data = await fetchAllRows<RewardWithGuest>((f, t) =>
-    supabase
-      .from("rewards")
-      .select("*, guests(name), wallet_passes(pass_identifier)")
-      .eq("restaurant_id", restaurantId)
+    db
+      .select("rewards", "*, guests(name), wallet_passes(pass_identifier)")
       .order("created_at", { ascending: false })
       .range(f, t),
   );
@@ -411,6 +403,7 @@ export async function getDashboardKpis(
 ): Promise<DashboardKpis> {
   await expireDueRewards(restaurantId);
   const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const head = { count: "exact" as const, head: true };
 
   const [
@@ -434,17 +427,9 @@ export async function getDashboardKpis(
       .eq("restaurant_id", restaurantId)
       .eq("route", "public_review")
       .eq("status", "completed"),
-    supabase
-      .from("rewards")
-      .select("id", head)
-      .eq("restaurant_id", restaurantId)
-      .eq("status", "active"),
-    supabase
-      .from("rewards")
-      .select("id", head)
-      .eq("restaurant_id", restaurantId)
-      .eq("status", "claimed"),
-    supabase.from("rewards").select("id", head).eq("restaurant_id", restaurantId),
+    db.select("rewards", "id", head).eq("status", "active"),
+    db.select("rewards", "id", head).eq("status", "claimed"),
+    db.select("rewards", "id", head),
     supabase
       .from("staff")
       .select("id", head)
@@ -479,37 +464,8 @@ export async function getDashboardKpis(
   };
 }
 
-export type WalletPassFull = {
-  id: string;
-  pass_identifier: string;
-  restaurant_id: string;
-  status: Database["public"]["Tables"]["wallet_passes"]["Row"]["status"];
-  rewards: {
-    id: string;
-    title: string;
-    reward_type: Reward["reward_type"];
-    value: number;
-    status: Reward["status"];
-    expiration_date: string;
-  } | null;
-  guests: { name: string | null } | null;
-  restaurants: { name: string; logo_url: string | null; slug: string } | null;
-};
-
-/** Public wallet pass resolution (pass + reward + guest + restaurant). */
-export async function getWalletPass(
-  passIdentifier: string,
-): Promise<WalletPassFull | null> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("wallet_passes")
-    .select(
-      "id, pass_identifier, restaurant_id, status, rewards(id, title, reward_type, value, status, expiration_date), guests(name), restaurants(name, logo_url, slug)",
-    )
-    .eq("pass_identifier", passIdentifier)
-    .maybeSingle();
-  return (data as WalletPassFull | null) ?? null;
-}
+// Public wallet pass resolution (display + claim) moved to tenant/resolve.ts
+// (resolveWalletPass / resolveWalletPassRef) — it's a token-resolve read.
 
 type Settings = Database["public"]["Tables"]["restaurant_settings"]["Row"];
 
