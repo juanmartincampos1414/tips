@@ -1,7 +1,7 @@
 import "server-only";
 
 import { fetchAllRows } from "@/lib/queries";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 
 import { getPaymentProvider } from "./mercadopago";
 
@@ -48,21 +48,21 @@ export type PaymentDashboard = {
 export async function getPaymentDashboard(
   restaurantId: string,
 ): Promise<PaymentDashboard> {
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [payments, staffRows, health] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
-      supabase
-        .from("payments")
-        .select("id, staff_id, amount, status, payment_method, tip_source, created_at, completed_at")
-        .eq("restaurant_id", restaurantId)
+      db
+        .select("payments", "id, staff_id, amount, status, payment_method, tip_source, created_at, completed_at")
         .order("created_at", { ascending: false })
         .range(f, t),
     ),
-    supabase.from("staff").select("id, name").eq("restaurant_id", restaurantId),
+    db.select("staff", "id, name"),
     getPaymentProvider().health(),
   ]);
   const provider = getPaymentProvider();
-  const staffName = new Map((staffRows.data ?? []).map((s) => [s.id, s.name]));
+  const staffName = new Map(
+    ((staffRows.data ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]),
+  );
 
   const approved = payments.filter((p) => p.status === "approved");
   const rejected = payments.filter((p) => p.status === "rejected");
@@ -144,23 +144,21 @@ export type StaffTips = {
 };
 
 export async function getStaffTips(restaurantId: string): Promise<StaffTips[]> {
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [payments, staffRows] = await Promise.all([
     fetchAllRows<PaymentRow>((f, t) =>
-      supabase
-        .from("payments")
-        .select("id, staff_id, amount, status, payment_method, tip_source, created_at, completed_at")
-        .eq("restaurant_id", restaurantId)
+      db
+        .select("payments", "id, staff_id, amount, status, payment_method, tip_source, created_at, completed_at")
         .eq("status", "approved")
         .range(f, t),
     ),
-    supabase.from("staff").select("id, name").eq("restaurant_id", restaurantId).neq("status", "archived"),
+    db.select("staff", "id, name").neq("status", "archived"),
   ]);
   const now = Date.now();
   const when = (p: PaymentRow) => new Date(p.completed_at ?? p.created_at).getTime();
   const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
 
-  return (staffRows.data ?? [])
+  return ((staffRows.data ?? []) as { id: string; name: string }[])
     .map((s) => {
       const mine = payments.filter((p) => p.staff_id === s.id);
       const sum = (pred: (p: PaymentRow) => boolean) =>

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { resolvePaymentByToken } from "@/lib/tenant/resolve";
 
 import { approveSandbox, cancelSandbox, rejectSandbox } from "./actions";
 
@@ -15,12 +15,7 @@ export default async function SandboxCheckoutPage({
   params: Promise<{ ref: string }>;
 }) {
   const { ref } = await params;
-  const supabase = unsafeAdminClient();
-  const { data: payment } = await supabase
-    .from("payments")
-    .select("amount, currency, status")
-    .eq("external_reference", ref)
-    .maybeSingle();
+  const payment = await resolvePaymentByToken({ externalReference: ref });
   if (!payment) notFound();
 
   const settled = ["approved", "rejected", "expired", "cancelled"].includes(payment.status);

@@ -31,9 +31,6 @@ const LEGACY = [
   "src/app/actions.ts",
   "src/app/t/[slug]/[code]/actions.ts",
   "src/app/w/[pass]/v/actions.ts",
-  "src/app/pay/[ref]/actions.ts",
-  "src/app/pay/[ref]/page.tsx",
-  "src/app/pay/[ref]/return/page.tsx",
   "src/app/api/export/[type]/route.ts",
   "src/app/api/webhooks/[provider]/route.ts",
   "src/app/api/webhooks/resend/route.ts",
@@ -42,7 +39,6 @@ const LEGACY = [
   "src/app/(manager)/emails/activacion/actions.ts",
   "src/app/(manager)/importar/actions.ts",
   "src/app/(manager)/integraciones/actions.ts",
-  "src/app/(manager)/pagos/actions.ts",
   "src/lib/queries.ts",
   "src/lib/email/readiness.ts",
   "src/lib/email/send.ts",
@@ -50,8 +46,9 @@ const LEGACY = [
   "src/lib/integrations/events.ts",
   "src/lib/integrations/manager.ts",
   "src/lib/integrations/sync.ts",
-  "src/lib/payments/events.ts",
-  "src/lib/payments/queries.ts",
+  // Tier 2 (payments) drained: payments/queries, payments/events, pay/[ref]/*,
+  // pagos/actions left the list. payments/service stays — onApproved still writes
+  // recognition_events.confirmed via unsafe (Tier 5 debt).
   "src/lib/payments/service.ts",
 ];
 

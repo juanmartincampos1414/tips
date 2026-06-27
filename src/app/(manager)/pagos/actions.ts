@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 
 import { requireManager } from "@/lib/auth";
 import { createTipPayment, refundPayment, retryPayment } from "@/lib/payments/service";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 
 async function baseUrl(): Promise<string> {
   const h = await headers();
@@ -19,14 +19,11 @@ async function baseUrl(): Promise<string> {
 export async function createSandboxTip(formData: FormData): Promise<void> {
   const member = await requireManager();
   const amount = Number((formData.get("amount") as string) ?? "2000") || 2000;
-  const supabase = unsafeAdminClient();
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("id")
-    .eq("restaurant_id", member.restaurantId)
+  const { data: staff } = (await tenantDb(member.restaurantId)
+    .select("staff", "id")
     .neq("status", "archived")
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as { data: { id: string } | null };
 
   const result = await createTipPayment({
     restaurantId: member.restaurantId,

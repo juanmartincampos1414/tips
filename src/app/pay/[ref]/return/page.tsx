@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { resolvePaymentByToken } from "@/lib/tenant/resolve";
 import { PAYMENT_STATUS_LABEL, type PaymentStatus } from "@/lib/payments/types";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +24,7 @@ export default async function PaymentReturnPage({
   params: Promise<{ ref: string }>;
 }) {
   const { ref } = await params;
-  const supabase = unsafeAdminClient();
-  const { data: payment } = await supabase
-    .from("payments")
-    .select("amount, currency, status, failure_reason")
-    .eq("external_reference", ref)
-    .maybeSingle();
+  const payment = await resolvePaymentByToken({ externalReference: ref });
   if (!payment) notFound();
 
   const status = payment.status as PaymentStatus;
