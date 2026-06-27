@@ -8,23 +8,28 @@
 -- =============================================================================
 
 drop policy if exists "Owners read their payments" on public.payments;
+drop policy if exists "Members read payments" on public.payments;
 create policy "Members read payments"
   on public.payments for select using (public.is_member(restaurant_id));
 
 drop policy if exists "Owners read their payment events" on public.payment_events;
+drop policy if exists "Members read payment events" on public.payment_events;
 create policy "Members read payment events"
   on public.payment_events for select using (public.is_member(restaurant_id));
 
 drop policy if exists "Owners read their settlements" on public.staff_settlements;
+drop policy if exists "Members read settlements" on public.staff_settlements;
 create policy "Members read settlements"
   on public.staff_settlements for select using (public.is_member(restaurant_id));
 
 drop policy if exists "Owners read their payouts" on public.restaurant_payouts;
+drop policy if exists "Members read payouts" on public.restaurant_payouts;
 create policy "Members read payouts"
   on public.restaurant_payouts for select using (public.is_member(restaurant_id));
 
 -- payment_intents: CHILD (no restaurant_id) → via the parent payment.
 drop policy if exists "Owners read their payment intents" on public.payment_intents;
+drop policy if exists "Members read payment intents" on public.payment_intents;
 create policy "Members read payment intents"
   on public.payment_intents for select using (
     exists (
