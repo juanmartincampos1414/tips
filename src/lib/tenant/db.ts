@@ -88,6 +88,33 @@ export function tenantDb(restaurantId: string) {
     },
 
     /**
+     * CHILD read over a SET of parents: filter by the parent FK ∈ parentIds.
+     * The parentIds MUST come from a tenant-scoped read (invariant). Returns a
+     * builder, so callers can chain .range()/.eq() (e.g. fetchAllRows).
+     */
+    childIn(table: ChildTable, parentIds: string[], columns = "*") {
+      return c.from(table).select(columns).in(CHILD_PARENT[table].fk, parentIds);
+    },
+
+    /**
+     * CHILD read by an arbitrary tenant-unique column (e.g. campaign_recipients
+     * by email_log_id). INVARIANT: every value in `match` must derive from a
+     * row already resolved within this tenant (an email_log resolved via the
+     * tenant resolver, a recipient id from a scoped read). Returns a builder.
+     */
+    childMatch(table: ChildTable, match: Row, columns = "*") {
+      return c.from(table).select(columns).match(match);
+    },
+
+    /**
+     * CHILD update by an arbitrary tenant-unique key. Same invariant as
+     * childMatch: `match` must derive from a tenant-scoped row.
+     */
+    childUpdate(table: ChildTable, match: Row, patch: Row) {
+      return c.from(table).update(patch).match(match);
+    },
+
+    /**
      * CHILD write: VERIFY the parent belongs to this tenant first (one guard
      * query), then run the insert. Returns the inserted rows or throws.
      */
@@ -102,6 +129,29 @@ export function tenantDb(restaurantId: string) {
       if (!ok) throw new Error(`tenantDb: parent ${parent}/${parentId} not in tenant`);
       const arr = (Array.isArray(rows) ? rows : [rows]).map((r) => ({ ...r, [fk]: parentId }));
       return c.from(table).insert(arr);
+    },
+
+    /**
+     * CHILD upsert: VERIFY the parent belongs to this tenant first (one guard
+     * query), then upsert. Injects the parent FK into every row. Forwards
+     * PostgREST upsert options (onConflict / ignoreDuplicates).
+     */
+    async upsertChild(
+      table: ChildTable,
+      parentId: string,
+      rows: Row | Row[],
+      options?: { onConflict?: string; ignoreDuplicates?: boolean },
+    ) {
+      const { parent, parentKey, fk } = CHILD_PARENT[table];
+      const { data: ok } = await c
+        .from(parent)
+        .select(parentKey)
+        .eq(parentKey, parentId)
+        .eq("restaurant_id", restaurantId)
+        .maybeSingle();
+      if (!ok) throw new Error(`tenantDb: parent ${parent}/${parentId} not in tenant`);
+      const arr = (Array.isArray(rows) ? rows : [rows]).map((r) => ({ ...r, [fk]: parentId }));
+      return c.from(table).upsert(arr, options);
     },
 
     /** ROOT — the tenant's own restaurant row. */

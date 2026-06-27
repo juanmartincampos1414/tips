@@ -8,7 +8,8 @@ import { unsafeAdminClient } from "@/lib/supabase/admin";
 // unguessable token (external_reference, provider_payment_id, pass id, slug…),
 // returns it (incl. its restaurant_id), and the caller then switches to
 // tenantDb(row.restaurant_id) for everything else. Allowlisted + audited; this
-// is the single file where service-role + token lookup is allowed for payments.
+// is the single file where service-role + token lookup is allowed for payments
+// and the Resend email webhook.
 // =============================================================================
 
 export type ResolvedPayment = {
@@ -43,4 +44,27 @@ export async function resolvePaymentByToken(tokens: {
   else return null;
   const { data } = await q.maybeSingle();
   return (data as ResolvedPayment | null) ?? null;
+}
+
+export type ResolvedEmailLog = {
+  id: string;
+  restaurant_id: string;
+  guest_id: string | null;
+};
+
+/**
+ * Resolve an email_log by the provider message id Resend sends in webhook
+ * events. The provider id is the scope — only this one log is returned, and the
+ * caller then operates with tenantDb(log.restaurant_id).
+ */
+export async function resolveEmailLogByProviderId(
+  providerMessageId: string,
+): Promise<ResolvedEmailLog | null> {
+  const c = unsafeAdminClient();
+  const { data } = await c
+    .from("email_logs")
+    .select("id, restaurant_id, guest_id")
+    .eq("provider_message_id", providerMessageId)
+    .maybeSingle();
+  return (data as ResolvedEmailLog | null) ?? null;
 }
