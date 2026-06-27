@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { logAudit, requireManager, requireOwner } from "@/lib/auth";
 import { sendTestEmail } from "@/lib/email/send";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 
 export type EmailActionState = {
   error?: string;
@@ -34,11 +34,8 @@ export async function createTemplate(
   if (!body) fieldErrors.body = "Escribí el cuerpo.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = unsafeAdminClient();
-  const { data, error } = await supabase
-    .from("email_templates")
-    .insert({
-      restaurant_id: member.restaurantId,
+  const { data, error } = await tenantDb(member.restaurantId)
+    .insert("email_templates", {
       name,
       subject,
       body,
@@ -74,17 +71,14 @@ export async function updateTemplate(
   if (!id) return { error: "Falta el template." };
 
   const allowed = ["draft", "active", "archived"];
-  const supabase = unsafeAdminClient();
-  const { error } = await supabase
-    .from("email_templates")
-    .update({
+  const { error } = await tenantDb(member.restaurantId)
+    .update("email_templates", {
       name,
       subject,
       body,
       ...(allowed.includes(status) ? { status: status as "draft" } : {}),
     })
-    .eq("id", id)
-    .eq("restaurant_id", member.restaurantId);
+    .eq("id", id);
   if (error) return { error: error.message };
 
   await logAudit({
@@ -105,12 +99,9 @@ export async function archiveTemplate(formData: FormData): Promise<void> {
   const id = str(formData, "id");
   if (!id) return;
 
-  const supabase = unsafeAdminClient();
-  await supabase
-    .from("email_templates")
-    .update({ status: "archived" })
-    .eq("id", id)
-    .eq("restaurant_id", member.restaurantId);
+  await tenantDb(member.restaurantId)
+    .update("email_templates", { status: "archived" })
+    .eq("id", id);
 
   await logAudit({
     restaurantId: member.restaurantId,

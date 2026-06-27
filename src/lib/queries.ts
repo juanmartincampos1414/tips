@@ -531,13 +531,11 @@ export type EmailTemplate =
 export async function getEmailTemplates(
   restaurantId: string,
 ): Promise<EmailTemplate[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("email_templates")
-    .select("*")
-    .eq("restaurant_id", restaurantId)
+  const db = tenantDb(restaurantId);
+  const { data } = await db
+    .select("email_templates", "*")
     .order("created_at", { ascending: false });
-  return data ?? [];
+  return (data as EmailTemplate[] | null) ?? [];
 }
 
 export type MemberRow = {
@@ -1084,6 +1082,7 @@ export async function getStaffImpact(
 ): Promise<StaffImpactRow[]> {
   await syncCampaignConversions(restaurantId);
   const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [
     { data: staff },
     { data: events },
@@ -1117,10 +1116,8 @@ export async function getStaffImpact(
     ).then((data) => ({ data })),
     supabase.from("rewards").select("guest_id, status").eq("restaurant_id", restaurantId),
     supabase.from("return_visits").select("guest_id").eq("restaurant_id", restaurantId),
-    supabase
-      .from("campaign_conversions")
-      .select("guest_id")
-      .eq("restaurant_id", restaurantId)
+    db
+      .select("campaign_conversions", "guest_id")
       .eq("conversion_type", "return_visit"),
   ]);
 
@@ -1240,44 +1237,30 @@ type DatedEvent = {
 export async function syncCampaignConversions(
   restaurantId: string,
 ): Promise<void> {
-  const supabase = unsafeAdminClient();
-  const { data: campaigns } = await supabase
-    .from("campaigns")
-    .select("id, sent_at, attribution_window_days")
-    .eq("restaurant_id", restaurantId)
+  const db = tenantDb(restaurantId);
+  const { data: campaigns } = (await db
+    .select("campaigns", "id, sent_at, attribution_window_days")
     .eq("status", "completed")
-    .not("sent_at", "is", null);
+    .not("sent_at", "is", null)) as {
+    data: { id: string; sent_at: string | null; attribution_window_days: number }[] | null;
+  };
   if (!campaigns || campaigns.length === 0) return;
 
   // All of these scale with audience size / activity → paginate past 1000.
   const campaignIds = campaigns.map((c) => c.id);
   const [aud, claims, returns, recs, reviews] = await Promise.all([
     fetchAllRows<{ campaign_id: string; guest_id: string }>((f, t) =>
-      supabase
-        .from("campaign_audiences")
-        .select("campaign_id, guest_id")
-        .in("campaign_id", campaignIds)
-        .range(f, t),
+      db.childIn("campaign_audiences", campaignIds, "campaign_id, guest_id").range(f, t),
     ),
     fetchAllRows<{ id: string; guest_id: string; claimed_at: string }>((f, t) =>
-      supabase
-        .from("reward_claims")
-        .select("id, guest_id, claimed_at")
-        .eq("restaurant_id", restaurantId)
-        .range(f, t),
+      db.select("reward_claims", "id, guest_id, claimed_at").range(f, t),
     ),
     fetchAllRows<{ id: string; guest_id: string; created_at: string }>((f, t) =>
-      supabase
-        .from("return_visits")
-        .select("id, guest_id, created_at")
-        .eq("restaurant_id", restaurantId)
-        .range(f, t),
+      db.select("return_visits", "id, guest_id, created_at").range(f, t),
     ),
     fetchAllRows<{ id: string; guest_id: string | null; created_at: string }>((f, t) =>
-      supabase
-        .from("recognition_events")
-        .select("id, guest_id, created_at")
-        .eq("restaurant_id", restaurantId)
+      db
+        .select("recognition_events", "id, guest_id, created_at")
         .not("guest_id", "is", null)
         .range(f, t),
     ),
@@ -1287,10 +1270,8 @@ export async function syncCampaignConversions(
       completed_at: string | null;
       status: string;
     }>((f, t) =>
-      supabase
-        .from("review_requests")
-        .select("id, recognition_event_id, completed_at, status")
-        .eq("restaurant_id", restaurantId)
+      db
+        .select("review_requests", "id, recognition_event_id, completed_at, status")
         .eq("status", "completed")
         .range(f, t),
     ),
@@ -1343,21 +1324,15 @@ export async function syncCampaignConversions(
     }
   }
   if (rows.length)
-    await supabase
-      .from("campaign_conversions")
-      .upsert(rows, {
-        onConflict: "campaign_id,guest_id,conversion_type,source_event_id",
-        ignoreDuplicates: true,
-      });
+    await db.upsert("campaign_conversions", rows, {
+      onConflict: "campaign_id,guest_id,conversion_type,source_event_id",
+      ignoreDuplicates: true,
+    });
 
   // Materialize per-campaign value rollups (Sprint 7.6) from the final state.
   const allConv = await fetchAllRows<{ campaign_id: string; conversion_type: string }>(
     (f, t) =>
-      supabase
-        .from("campaign_conversions")
-        .select("campaign_id, conversion_type")
-        .eq("restaurant_id", restaurantId)
-        .range(f, t),
+      db.select("campaign_conversions", "campaign_id, conversion_type").range(f, t),
   );
   const roll = new Map<string, { rewards: number; returns: number; recs: number }>();
   for (const c of allConv ?? []) {
@@ -1370,9 +1345,8 @@ export async function syncCampaignConversions(
   await Promise.all(
     campaigns.map((c) => {
       const r = roll.get(c.id) ?? { rewards: 0, returns: 0, recs: 0 };
-      return supabase
-        .from("campaigns")
-        .update({
+      return db
+        .update("campaigns", {
           attributed_rewards: r.rewards,
           attributed_return_visits: r.returns,
           attributed_recognitions: r.recs,
@@ -1423,34 +1397,34 @@ export async function getCampaigns(
   restaurantId: string,
 ): Promise<{ campaigns: CampaignListItem[]; intelligence: CampaignIntelligence }> {
   await syncCampaignConversions(restaurantId);
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
+  // Resolve this tenant's campaigns first; recipients/audiences are CHILD tables
+  // (no restaurant_id) and MUST be scoped to these campaign ids — never read
+  // globally.
+  const { data: rows } = (await db
+    .select("campaigns", "*")
+    .order("created_at", { ascending: false })) as { data: Campaign[] | null };
+  const campaignIds = (rows ?? []).map((c) => c.id);
   // recipients/conversions/audiences scale with campaign audience size (a send
   // to a large segment can be tens of thousands) → paginate past the 1000 cap.
-  const [{ data: rows }, { data: templates }, recipients, conversions, audiences] =
+  const [{ data: templates }, recipients, conversions, audiences] =
     await Promise.all([
-      supabase
-        .from("campaigns")
-        .select("*")
-        .eq("restaurant_id", restaurantId)
-        .order("created_at", { ascending: false }),
-      supabase.from("email_templates").select("id, name").eq("restaurant_id", restaurantId),
+      db.select("email_templates", "id, name"),
       fetchAllRows<{ campaign_id: string; status: string }>((f, t) =>
-        supabase.from("campaign_recipients").select("campaign_id, status").range(f, t),
+        db.childIn("campaign_recipients", campaignIds, "campaign_id, status").range(f, t),
       ),
       fetchAllRows<{ campaign_id: string; guest_id: string; conversion_type: ConversionType }>(
         (f, t) =>
-          supabase
-            .from("campaign_conversions")
-            .select("campaign_id, guest_id, conversion_type")
-            .eq("restaurant_id", restaurantId)
+          db
+            .select("campaign_conversions", "campaign_id, guest_id, conversion_type")
             .range(f, t),
       ),
       fetchAllRows<{ campaign_id: string; guest_id: string }>((f, t) =>
-        supabase.from("campaign_audiences").select("campaign_id, guest_id").range(f, t),
+        db.childIn("campaign_audiences", campaignIds, "campaign_id, guest_id").range(f, t),
       ),
     ]);
 
-  const tplName = new Map((templates ?? []).map((t) => [t.id, t.name]));
+  const tplName = new Map(((templates ?? []) as { id: string; name: string }[]).map((t) => [t.id, t.name]));
   const recByCampaign = new Map<string, { status: string }[]>();
   for (const r of recipients ?? [])
     recByCampaign.set(r.campaign_id, [...(recByCampaign.get(r.campaign_id) ?? []), r]);
@@ -1572,27 +1546,23 @@ export async function getCampaign(
   campaignId: string,
 ): Promise<CampaignDetail | null> {
   await syncCampaignConversions(restaurantId);
-  const supabase = unsafeAdminClient();
-  const { data: campaign } = await supabase
-    .from("campaigns")
-    .select("*")
+  const db = tenantDb(restaurantId);
+  const { data: campaign } = (await db
+    .select("campaigns", "*")
     .eq("id", campaignId)
-    .eq("restaurant_id", restaurantId)
-    .maybeSingle();
+    .maybeSingle()) as { data: Campaign | null };
   if (!campaign) return null;
 
+  // campaign is verified to belong to this tenant → its id is a safe parent for
+  // the CHILD recipients read.
   const [{ data: recs }, { data: convs }, tpl] = await Promise.all([
-    supabase
-      .from("campaign_recipients")
-      .select("guest_id, status, reason, guests(name, email)")
-      .eq("campaign_id", campaignId),
-    supabase
-      .from("campaign_conversions")
-      .select("guest_id, conversion_type, conversion_date, guests(name)")
+    db.child("campaign_recipients", campaignId, "guest_id, status, reason, guests(name, email)"),
+    db
+      .select("campaign_conversions", "guest_id, conversion_type, conversion_date, guests(name)")
       .eq("campaign_id", campaignId)
       .order("conversion_date", { ascending: false }),
     campaign.template_id
-      ? supabase.from("email_templates").select("name").eq("id", campaign.template_id).maybeSingle()
+      ? db.select("email_templates", "name").eq("id", campaign.template_id).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
 
@@ -1651,20 +1621,29 @@ export async function getGuestCommunications(
   restaurantId: string,
   guestId: string,
 ): Promise<GuestCommunication[]> {
-  const supabase = unsafeAdminClient();
   const db = tenantDb(restaurantId);
-  // campaign_recipients is a CHILD table (no restaurant_id) → scope via the
-  // parent campaign with an inner-join filter on restaurant_id.
-  const { data: recs } = await supabase
-    .from("campaign_recipients")
-    .select("campaign_id, status, channel, campaigns!inner(name, sent_at)")
-    .eq("guest_id", guestId)
-    .eq("campaigns.restaurant_id", restaurantId);
+  // Resolve this tenant's campaigns first (id → name/sent_at), then scope the
+  // CHILD recipients read to those campaign ids — no cross-tenant read, no
+  // unsafe client (closes the Tier 1 debt).
+  const { data: camps } = (await db.select("campaigns", "id, name, sent_at")) as {
+    data: { id: string; name: string; sent_at: string | null }[] | null;
+  };
+  const campaignIds = (camps ?? []).map((c) => c.id);
+  if (campaignIds.length === 0) return [];
+  const campMap = new Map((camps ?? []).map((c) => [c.id, c]));
+
+  const { data: recs } = (await db
+    .childIn("campaign_recipients", campaignIds, "campaign_id, status, channel")
+    .eq("guest_id", guestId)) as {
+    data: { campaign_id: string; status: string; channel: CampaignChannel }[] | null;
+  };
   if (!recs || recs.length === 0) return [];
 
-  const { data: convs } = await db
+  const { data: convs } = (await db
     .select("campaign_conversions", "campaign_id, conversion_type")
-    .eq("guest_id", guestId);
+    .eq("guest_id", guestId)) as {
+    data: { campaign_id: string; conversion_type: ConversionType }[] | null;
+  };
   const convByCampaign = new Map<string, ConversionType[]>();
   for (const c of convs ?? [])
     convByCampaign.set(c.campaign_id, [
@@ -1672,19 +1651,12 @@ export async function getGuestCommunications(
       c.conversion_type,
     ]);
 
-  return (
-    recs as unknown as {
-      campaign_id: string;
-      status: string;
-      channel: CampaignChannel;
-      campaigns: { name: string; sent_at: string | null } | null;
-    }[]
-  )
+  return recs
     .map((r) => ({
       campaignId: r.campaign_id,
-      name: r.campaigns?.name ?? "—",
+      name: campMap.get(r.campaign_id)?.name ?? "—",
       channel: r.channel,
-      sentAt: r.campaigns?.sent_at ?? null,
+      sentAt: campMap.get(r.campaign_id)?.sent_at ?? null,
       status: r.status,
       conversions: convByCampaign.get(r.campaign_id) ?? [],
     }))
@@ -1899,12 +1871,13 @@ export async function getRecentEmailLogs(
   restaurantId: string,
   limit = 15,
 ): Promise<EmailLogRow[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("email_logs")
-    .select("id, recipient_email, subject, status, provider_message_id, error_message, retry_count, created_at")
-    .eq("restaurant_id", restaurantId)
+  const db = tenantDb(restaurantId);
+  const { data } = await db
+    .select(
+      "email_logs",
+      "id, recipient_email, subject, status, provider_message_id, error_message, retry_count, created_at",
+    )
     .order("created_at", { ascending: false })
     .limit(limit);
-  return data ?? [];
+  return (data as EmailLogRow[] | null) ?? [];
 }
