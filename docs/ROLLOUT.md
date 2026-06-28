@@ -124,6 +124,43 @@ conocimiento.** Y eso reordena el trabajo:
 - El código se toca **solo** para bugs de operación (freeze). Todo lo demás es
   observar, documentar y aprender.
 
+### El ciclo de aprendizaje — la unidad mínima del sistema
+
+La unidad mínima del piloto no es el Friction Log, ni el Daily Review, ni el código.
+Es este ciclo, que se cierra **cada semana**:
+
+> **Observar → Capturar → Sintetizar → Decidir → Volver a observar.**
+
+Cada etapa exige una disciplina distinta. **Si falta una sola, el sistema deja de
+aprender:**
+
+| Etapa | Exige | Si falta… |
+|---|---|---|
+| **Observar** | presencia | no hay materia prima |
+| **Capturar** | inmediatez | la observación se **pierde** |
+| **Sintetizar** | criterio | la captura se **acumula** |
+| **Decidir** | coraje | la síntesis es **solo documentación** |
+| **Volver a observar** | humildad | la decisión se vuelve **opinión** |
+
+Dos cadencias dentro del ciclo: *observar + capturar* son continuos (en el momento,
+diario); *sintetizar + decidir + volver a observar* cierran en el check-in semanal.
+El ciclo no se repite para producir más documentos, sino para **reducir un poco más
+la incertidumbre** cada semana.
+
+Las secciones de abajo son las disciplinas de cada etapa: la **regla del lab**
+protege el *observar*; *"capturar no es componer"* separa el *capturar* del
+*sintetizar*; la **pregunta del día** y el **filtro de decisión** gobiernan el
+*decidir*; y volver a observar exige la humildad de creerle a la señal aunque
+contradiga la hipótesis.
+
+> **Construir software vs. construir producto.** El software mejora cuando
+> escribimos mejor código; el producto mejora cuando tomamos **mejores decisiones**.
+> Y las mejores decisiones no nacen de la intuición — nacen de observar la realidad
+> con suficiente disciplina como para dejar que **contradiga nuestras hipótesis**. Si
+> sostenemos el ciclo en Trufa y Massey, el producto que llegue al primer independiente
+> no va a ser solo más pulido: va a ser **un producto que ya aprendió** — una ventaja
+> que ningún sprint puede reemplazar.
+
 ### La pregunta que gobierna el piloto
 
 Durante la construcción nos preguntábamos *"¿qué deberíamos construir ahora?"*.
