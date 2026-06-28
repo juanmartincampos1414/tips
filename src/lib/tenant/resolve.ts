@@ -108,6 +108,28 @@ export async function resolveWalletPass(
   return (data as WalletPassFull | null) ?? null;
 }
 
+export type ResolvedReviewRequest = {
+  id: string;
+  restaurant_id: string;
+};
+
+/**
+ * Resolve a review_request by its id for the public review-status actions
+ * (complete / feedback / ignore). The id is the scope — only this one request is
+ * returned, and the caller then operates with tenantDb(rr.restaurant_id).
+ */
+export async function resolveReviewRequest(
+  reviewRequestId: string,
+): Promise<ResolvedReviewRequest | null> {
+  const c = unsafeAdminClient();
+  const { data } = await c
+    .from("review_requests")
+    .select("id, restaurant_id")
+    .eq("id", reviewRequestId)
+    .maybeSingle();
+  return (data as ResolvedReviewRequest | null) ?? null;
+}
+
 export type WalletPassRef = {
   id: string;
   reward_id: string;
