@@ -152,11 +152,8 @@ export async function createStaff(
     return { error: (e as Error).message };
   }
 
-  const supabase = unsafeAdminClient();
-  const { data: created, error } = await supabase
-    .from("staff")
-    .insert({
-      restaurant_id: restaurant.id,
+  const { data: created, error } = await tenantDb(restaurant.id)
+    .insert("staff", {
       name,
       role: role || null,
       email: email || null,
@@ -190,8 +187,7 @@ export async function archiveStaff(formData: FormData): Promise<void> {
   const id = str(formData, "id");
   if (!id) return;
 
-  const supabase = unsafeAdminClient();
-  await supabase.from("staff").update({ status: "archived" }).eq("id", id);
+  await tenantDb(member.restaurantId).update("staff", { status: "archived" }).eq("id", id);
 
   await logAudit({
     restaurantId: member.restaurantId,
@@ -421,10 +417,8 @@ async function logNfcEvent(
   event: "created" | "assigned" | "replaced" | "unassigned" | "lost" | "damaged" | "archived",
   userId: string,
 ) {
-  const supabase = unsafeAdminClient();
-  await supabase.from("nfc_events").insert({
+  await tenantDb(restaurantId).insert("nfc_events", {
     nfc_id: nfcId,
-    restaurant_id: restaurantId,
     staff_id: staffId,
     event,
     created_by: userId,
@@ -444,10 +438,8 @@ export async function createNfc(
   if (!uid) fieldErrors.uid = "UID obligatorio.";
   if (Object.keys(fieldErrors).length) return { fieldErrors };
 
-  const supabase = unsafeAdminClient();
-  const { data: band, error } = await supabase
-    .from("nfc_inventory")
-    .insert({ restaurant_id: member.restaurantId, serial_number: serial, uid, status: "stock" })
+  const { data: band, error } = await tenantDb(member.restaurantId)
+    .insert("nfc_inventory", { serial_number: serial, uid, status: "stock" })
     .select("id")
     .single();
   if (error) {
@@ -456,7 +448,7 @@ export async function createNfc(
     return { error: error.message };
   }
 
-  await logNfcEvent(band.id, member.restaurantId, null, "created", member.userId);
+  await logNfcEvent((band as { id: string }).id, member.restaurantId, null, "created", member.userId);
   await logAudit({
     restaurantId: member.restaurantId,
     userId: member.userId,
@@ -476,29 +468,26 @@ export async function assignNfcBand(formData: FormData): Promise<void> {
   const staffId = str(formData, "staff_id");
   if (!nfcId || !staffId) return;
 
-  const supabase = unsafeAdminClient();
-  const { data: band } = await supabase
-    .from("nfc_inventory")
-    .select("id, status, restaurant_id")
+  const db = tenantDb(member.restaurantId);
+  const { data: band } = (await db
+    .select("nfc_inventory", "id, status")
     .eq("id", nfcId)
-    .maybeSingle();
+    .maybeSingle()) as { data: { id: string; status: string } | null };
   if (!band || band.status !== "stock") return;
 
   // Replace: free the staff's current assigned band (back to stock).
-  const { data: current } = await supabase
-    .from("nfc_inventory")
-    .select("id")
+  const { data: current } = (await db
+    .select("nfc_inventory", "id")
     .eq("assigned_staff_id", staffId)
     .eq("status", "assigned")
-    .maybeSingle();
+    .maybeSingle()) as { data: { id: string } | null };
   if (current) {
-    await supabase
-      .from("nfc_inventory")
-      .update({ status: "stock", assigned_staff_id: null, assigned_at: null })
+    await db
+      .update("nfc_inventory", { status: "stock", assigned_staff_id: null, assigned_at: null })
       .eq("id", current.id);
-    await logNfcEvent(current.id, band.restaurant_id, staffId, "replaced", member.userId);
+    await logNfcEvent(current.id, member.restaurantId, staffId, "replaced", member.userId);
     await logAudit({
-      restaurantId: band.restaurant_id,
+      restaurantId: member.restaurantId,
       userId: member.userId,
       action: "nfc.replaced",
       entityType: "nfc_inventory",
@@ -507,17 +496,16 @@ export async function assignNfcBand(formData: FormData): Promise<void> {
     });
   }
 
-  await supabase
-    .from("nfc_inventory")
-    .update({
+  await db
+    .update("nfc_inventory", {
       status: "assigned",
       assigned_staff_id: staffId,
       assigned_at: new Date().toISOString(),
     })
     .eq("id", nfcId);
-  await logNfcEvent(nfcId, band.restaurant_id, staffId, "assigned", member.userId);
+  await logNfcEvent(nfcId, member.restaurantId, staffId, "assigned", member.userId);
   await logAudit({
-    restaurantId: band.restaurant_id,
+    restaurantId: member.restaurantId,
     userId: member.userId,
     action: "nfc.assigned",
     entityType: "nfc_inventory",
@@ -535,27 +523,25 @@ export async function markNfcStatus(formData: FormData): Promise<void> {
   const status = str(formData, "status");
   if (!nfcId || !["lost", "damaged", "archived"].includes(status)) return;
 
-  const supabase = unsafeAdminClient();
-  const { data: band } = await supabase
-    .from("nfc_inventory")
-    .select("id, restaurant_id, assigned_staff_id")
+  const db = tenantDb(member.restaurantId);
+  const { data: band } = (await db
+    .select("nfc_inventory", "id, assigned_staff_id")
     .eq("id", nfcId)
-    .maybeSingle();
+    .maybeSingle()) as { data: { id: string; assigned_staff_id: string | null } | null };
   if (!band) return;
 
-  await supabase
-    .from("nfc_inventory")
-    .update({ status: status as "lost" | "damaged" | "archived" })
+  await db
+    .update("nfc_inventory", { status: status as "lost" | "damaged" | "archived" })
     .eq("id", nfcId);
   await logNfcEvent(
     nfcId,
-    band.restaurant_id,
+    member.restaurantId,
     band.assigned_staff_id,
     status as "lost" | "damaged" | "archived",
     member.userId,
   );
   await logAudit({
-    restaurantId: band.restaurant_id,
+    restaurantId: member.restaurantId,
     userId: member.userId,
     action: `nfc.${status}`,
     entityType: "nfc_inventory",
