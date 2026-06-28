@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getCurrentMembership, MANAGER_ROLES } from "@/lib/auth";
 import { toCsv } from "@/lib/csv";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import {
   fetchAllRows,
   getCrmData,
@@ -51,17 +51,14 @@ export async function GET(
       date(r.expiration_date),
     ]);
   } else if (type === "reviews") {
-    const supabase = unsafeAdminClient();
     const data = await fetchAllRows<{
       route: string;
       status: string;
       created_at: string;
       recognition_events: { guests: { name: string } | null } | null;
     }>((f, t) =>
-      supabase
-        .from("review_requests")
-        .select("route, status, created_at, recognition_events(guests(name))")
-        .eq("restaurant_id", rid)
+      tenantDb(rid)
+        .select("review_requests", "route, status, created_at, recognition_events(guests(name))")
         .order("created_at", { ascending: false })
         .range(f, t),
     );
@@ -73,15 +70,12 @@ export async function GET(
       date(r.created_at),
     ]);
   } else if (type === "return_visits") {
-    const supabase = unsafeAdminClient();
     const data = await fetchAllRows<{
       created_at: string;
       guests: { name: string; email: string } | null;
     }>((f, t) =>
-      supabase
-        .from("return_visits")
-        .select("created_at, guests(name, email)")
-        .eq("restaurant_id", rid)
+      tenantDb(rid)
+        .select("return_visits", "created_at, guests(name, email)")
         .order("created_at", { ascending: false })
         .range(f, t),
     );

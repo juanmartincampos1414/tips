@@ -190,9 +190,7 @@ export async function resolvePublicStaff(
 
 /** Records a Visit for a guest opening a staff profile (FR-005 / AC-006). */
 export async function recordVisit(restaurantId: string, staffId: string) {
-  const supabase = unsafeAdminClient();
-  await supabase.from("visits").insert({
-    restaurant_id: restaurantId,
+  await tenantDb(restaurantId).insert("visits", {
     staff_id: staffId,
     source: "nfc",
   });
@@ -253,6 +251,7 @@ export type StaffMetrics = {
  * fine for a single restaurant's team size.
  */
 export async function getStaffMetrics(
+  restaurantId: string,
   staffIds: string[],
 ): Promise<Record<string, StaffMetrics>> {
   const empty = (): StaffMetrics => ({
@@ -264,23 +263,17 @@ export async function getStaffMetrics(
   staffIds.forEach((id) => (out[id] = empty()));
   if (staffIds.length === 0) return out;
 
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [{ data: ratings }, { data: tips }, { data: events }] =
     await Promise.all([
-      supabase.from("ratings").select("staff_id, rating").in("staff_id", staffIds),
-      supabase
-        .from("tips")
-        .select("staff_id, amount, payment_status")
-        .in("staff_id", staffIds),
-      supabase
-        .from("recognition_events")
-        .select("staff_id")
-        .in("staff_id", staffIds),
+      db.select("ratings", "staff_id, rating").in("staff_id", staffIds),
+      db.select("tips", "staff_id, amount, payment_status").in("staff_id", staffIds),
+      db.select("recognition_events", "staff_id").in("staff_id", staffIds),
     ]);
 
   const ratingSum: Record<string, number> = {};
   const ratingCount: Record<string, number> = {};
-  (ratings ?? []).forEach((r) => {
+  ((ratings ?? []) as { staff_id: string; rating: number }[]).forEach((r) => {
     ratingSum[r.staff_id] = (ratingSum[r.staff_id] ?? 0) + r.rating;
     ratingCount[r.staff_id] = (ratingCount[r.staff_id] ?? 0) + 1;
   });
@@ -289,12 +282,12 @@ export async function getStaffMetrics(
       out[id].averageRating = ratingSum[id] / ratingCount[id];
   });
 
-  (tips ?? []).forEach((t) => {
+  ((tips ?? []) as { staff_id: string; amount: number; payment_status: string }[]).forEach((t) => {
     if (t.payment_status === "completed")
       out[t.staff_id].totalTips += Number(t.amount);
   });
 
-  (events ?? []).forEach((e) => {
+  ((events ?? []) as { staff_id: string }[]).forEach((e) => {
     out[e.staff_id].recognitionEvents += 1;
   });
 
@@ -311,16 +304,10 @@ export type CaptureStats = {
 export async function getCaptureStats(
   restaurantId: string,
 ): Promise<CaptureStats> {
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [{ count: guests }, { count: events }] = await Promise.all([
-    supabase
-      .from("guests")
-      .select("id", { count: "exact", head: true })
-      .eq("restaurant_id", restaurantId),
-    supabase
-      .from("recognition_events")
-      .select("id", { count: "exact", head: true })
-      .eq("restaurant_id", restaurantId),
+    db.select("guests", "id", { count: "exact", head: true }),
+    db.select("recognition_events", "id", { count: "exact", head: true }),
   ]);
   const guestsCaptured = guests ?? 0;
   const recognitionEvents = events ?? 0;
@@ -417,14 +404,9 @@ export async function getDashboardKpis(
     { data: returns },
   ] = await Promise.all([
     supabase.from("guests").select("id", head).eq("restaurant_id", restaurantId),
-    supabase
-      .from("recognition_events")
-      .select("id", head)
-      .eq("restaurant_id", restaurantId),
-    supabase
-      .from("review_requests")
-      .select("id", head)
-      .eq("restaurant_id", restaurantId)
+    db.select("recognition_events", "id", head),
+    db
+      .select("review_requests", "id", head)
       .eq("route", "public_review")
       .eq("status", "completed"),
     db.select("rewards", "id", head).eq("status", "active"),
@@ -740,23 +722,16 @@ export async function getGuestsList(
   restaurantId: string,
 ): Promise<GuestListRow[]> {
   const { computeSegment } = await import("@/lib/segments");
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
   const [{ data: guests }, { data: events }, { data: returns }] =
     await Promise.all([
-      supabase
-        .from("guests")
-        .select("*, staff:last_staff_id(name)")
-        .eq("restaurant_id", restaurantId)
+      db
+        .select("guests", "*, staff:last_staff_id(name)")
         .order("created_at", { ascending: false }),
-      supabase
-        .from("recognition_events")
-        .select("guest_id, created_at")
-        .eq("restaurant_id", restaurantId)
+      db
+        .select("recognition_events", "guest_id, created_at")
         .not("guest_id", "is", null),
-      supabase
-        .from("return_visits")
-        .select("guest_id, created_at")
-        .eq("restaurant_id", restaurantId),
+      db.select("return_visits", "guest_id, created_at"),
     ]);
 
   const lastByGuest = new Map<string, string>();
@@ -1054,15 +1029,9 @@ export async function getStaffImpact(
       .select("id, name")
       .eq("restaurant_id", restaurantId)
       .neq("status", "archived"),
-    supabase
-      .from("recognition_events")
-      .select("id, staff_id, rating_id")
-      .eq("restaurant_id", restaurantId),
-    supabase.from("ratings").select("id, rating"),
-    supabase
-      .from("review_requests")
-      .select("recognition_event_id, route, status")
-      .eq("restaurant_id", restaurantId),
+    db.select("recognition_events", "id, staff_id, rating_id"),
+    db.select("ratings", "id, rating"),
+    db.select("review_requests", "recognition_event_id, route, status"),
     fetchAllRows<{ id: string; last_staff_id: string | null }>((f, t) =>
       supabase
         .from("guests")
@@ -1077,7 +1046,9 @@ export async function getStaffImpact(
       .eq("conversion_type", "return_visit"),
   ]);
 
-  const ratingById = new Map((ratings ?? []).map((r) => [r.id, r.rating]));
+  const ratingById = new Map(
+    ((ratings ?? []) as { id: string; rating: number }[]).map((r) => [r.id, r.rating]),
+  );
   const eventStaff = new Map<string, string>(); // event id → staff
   const recCount = new Map<string, number>();
   const ratingSum = new Map<string, number>();
@@ -1152,6 +1123,7 @@ export async function getDashboardStats(
   restaurantId: string,
 ): Promise<DashboardStats> {
   const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
 
   const [{ count: staffCount }, { count: visitCount }] = await Promise.all([
     supabase
@@ -1159,10 +1131,7 @@ export async function getDashboardStats(
       .select("id", { count: "exact", head: true })
       .eq("restaurant_id", restaurantId)
       .neq("status", "archived"),
-    supabase
-      .from("visits")
-      .select("id", { count: "exact", head: true })
-      .eq("restaurant_id", restaurantId),
+    db.select("visits", "id", { count: "exact", head: true }),
   ]);
 
   return {

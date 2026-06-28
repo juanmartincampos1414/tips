@@ -17,7 +17,7 @@ const money = (n: number) => "$" + n.toLocaleString("es-AR");
 export default async function StaffPage() {
   const restaurant = (await getCurrentRestaurant())!;
   const staff = await getStaffWithBand(restaurant.id);
-  const metrics = await getStaffMetrics(staff.map((s) => s.id));
+  const metrics = await getStaffMetrics(restaurant.id, staff.map((s) => s.id));
 
   return (
     <div className="mx-auto w-full max-w-4xl">

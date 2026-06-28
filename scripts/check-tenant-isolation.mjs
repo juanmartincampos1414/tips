@@ -33,7 +33,8 @@ const LEGACY = [
   // Tier 4 (rewards): w/[pass]/v/actions left (claimByPass via resolver+tenantDb).
   // actions.ts + t/[slug]/[code]/actions stay — other domains (createMember,
   // recognition_events T5) still use unsafe.
-  "src/app/api/export/[type]/route.ts",
+  // Tier 5 (recognition) Commit B drained: export route left (review_requests +
+  // return_visits reads now via tenantDb).
   "src/app/api/webhooks/[provider]/route.ts",
   // Tier 3 (campaigns) fully drained: campanas/actions, emails/actions (B) +
   // emails/activacion, email/{send,webhook,readiness}, webhooks/resend (C) all
