@@ -14,6 +14,8 @@ import type { Database } from "@/lib/database.types";
 // =============================================================================
 
 type Reward = Database["public"]["Tables"]["rewards"]["Row"];
+type Restaurant = Database["public"]["Tables"]["restaurants"]["Row"];
+type Staff = Database["public"]["Tables"]["staff"]["Row"];
 
 export type ResolvedPayment = {
   id: string;
@@ -153,4 +155,47 @@ export async function resolveWalletPassRef(
     .eq("pass_identifier", passIdentifier)
     .maybeSingle();
   return (data as WalletPassRef | null) ?? null;
+}
+
+/**
+ * Public guest flow: resolve the staff member behind an NFC tap. URL is
+ * /t/:slug/:code where :slug is the restaurant slug and :code is the band's uid.
+ * The slug+uid are the scope (only an active, assigned band of an active
+ * restaurant resolves); returns the active staff + restaurant, or null (→ 404).
+ * The caller then operates with tenantDb(restaurant.id).
+ */
+export async function resolvePublicStaff(
+  slug: string,
+  code: string,
+): Promise<{ restaurant: Restaurant; staff: Staff } | null> {
+  const c = unsafeAdminClient();
+
+  const { data: restaurant } = await c
+    .from("restaurants")
+    .select("*")
+    .eq("slug", slug)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!restaurant) return null;
+
+  // Resolve the band by its uid in the inventory (must be assigned).
+  const { data: band } = await c
+    .from("nfc_inventory")
+    .select("assigned_staff_id")
+    .eq("restaurant_id", restaurant.id)
+    .eq("uid", code)
+    .eq("status", "assigned")
+    .maybeSingle();
+  if (!band?.assigned_staff_id) return null;
+
+  const { data: staff } = await c
+    .from("staff")
+    .select("*")
+    .eq("id", band.assigned_staff_id)
+    .eq("restaurant_id", restaurant.id)
+    .eq("status", "active")
+    .maybeSingle();
+  if (!staff) return null;
+
+  return { restaurant: restaurant as Restaurant, staff: staff as Staff };
 }
