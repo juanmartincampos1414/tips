@@ -199,3 +199,28 @@ export async function resolvePublicStaff(
 
   return { restaurant: restaurant as Restaurant, staff: staff as Staff };
 }
+
+export type ResolvedConnection = { restaurant_id: string };
+
+/**
+ * Resolve a tenant from the generic webhook path /api/webhooks/[provider].
+ *
+ * ⚠️ PLACEHOLDER — NOT a definitive multi-tenant webhook security design. It
+ * picks the FIRST connection for the provider, so it is only valid for sandbox /
+ * generic providers while no STRONG tenant identifier exists in the payload,
+ * secret, signature, or a per-tenant endpoint. A real multi-tenant webhook MUST
+ * resolve the tenant from such an identifier. Resend and Mercado Pago are out of
+ * scope here — they have their own routes + specific resolvers.
+ */
+export async function resolveConnectionByProvider(
+  provider: string,
+): Promise<ResolvedConnection | null> {
+  const c = unsafeAdminClient();
+  const { data } = await c
+    .from("connections")
+    .select("restaurant_id")
+    .eq("provider", provider)
+    .limit(1)
+    .maybeSingle();
+  return (data as ResolvedConnection | null) ?? null;
+}
