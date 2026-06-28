@@ -5,6 +5,23 @@
 > [PILOT_SUCCESS_DEFINITION.md](PILOT_SUCCESS_DEFINITION.md): el aprendizaje vale
 > más que cualquier feature.
 
+## Principio rector
+
+> **Lo que no se registra en el momento, se pierde.**
+
+No reconstruimos el día a la noche desde la memoria: capturamos la observación
+**cuando ocurre.** En esta etapa, el código entra en modo mantenimiento y el
+aprendizaje entra en modo producción. Por eso este documento es el entregable.
+
+- Cada **fricción documentada** es una decisión futura que no vamos a tener que
+  volver a descubrir.
+- Cada **patrón detectado** es producto.
+- Cada **falso positivo evitado** nos ahorra meses de construir sobre una premisa
+  equivocada.
+
+El objetivo ya no es demostrar que Tips funciona, sino entender **por qué funciona,
+por qué no, y qué comportamiento genera en personas reales.**
+
 ## Cómo usarlo
 - **Anotá en el momento**, no de memoria al final del día.
 - Una fila por fricción observada (aunque parezca menor).
