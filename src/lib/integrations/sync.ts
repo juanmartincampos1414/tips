@@ -1,6 +1,6 @@
 import "server-only";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb, type TenantDb } from "@/lib/tenant/db";
 
 import { emitEvent } from "./events";
 import { getAdapter } from "./registry";
@@ -26,13 +26,13 @@ export async function runSync(
   connectionId: string,
   direction: SyncDirection = "inbound",
 ): Promise<RunSyncResult> {
-  const supabase = unsafeAdminClient();
-  const { data: conn } = await supabase
-    .from("connections")
-    .select("id, provider, status, sandbox")
+  const db = tenantDb(restaurantId);
+  const { data: conn } = (await db
+    .select("connections", "id, provider, status, sandbox")
     .eq("id", connectionId)
-    .eq("restaurant_id", restaurantId)
-    .maybeSingle();
+    .maybeSingle()) as {
+    data: { id: string; provider: string; status: string; sandbox: boolean } | null;
+  };
   if (!conn) return { ok: false, jobId: null, rowsProcessed: 0, error: "Conexión inexistente." };
 
   const adapter = getAdapter(conn.provider, conn.sandbox ? "sandbox" : "production");
@@ -41,10 +41,8 @@ export async function runSync(
 
   // Open the job.
   const started = Date.now();
-  const { data: job } = await supabase
-    .from("sync_jobs")
-    .insert({
-      restaurant_id: restaurantId,
+  const { data: job } = await db
+    .insert("sync_jobs", {
       connection_id: connectionId,
       provider: conn.provider,
       direction,
@@ -53,32 +51,30 @@ export async function runSync(
     })
     .select("id")
     .single();
-  const jobId = job?.id ?? null;
+  const jobId = (job as { id: string } | null)?.id ?? null;
   await emitEvent({ restaurantId, type: "SyncStarted", source: conn.provider, payload: { jobId } });
 
   // Validate before syncing (security requirement).
   const test = await adapter.testConnection();
-  if (!test.ok) return finishFailed(supabase, restaurantId, conn.id, conn.provider, jobId, started, test.message);
+  if (!test.ok) return finishFailed(db, restaurantId, conn.id, conn.provider, jobId, started, test.message);
 
   const result = await adapter.sync(direction);
   const duration = Date.now() - started;
 
   if (!result.ok)
-    return finishFailed(supabase, restaurantId, conn.id, conn.provider, jobId, started, result.error ?? "Sync falló");
+    return finishFailed(db, restaurantId, conn.id, conn.provider, jobId, started, result.error ?? "Sync falló");
 
   if (jobId)
-    await supabase
-      .from("sync_jobs")
-      .update({
+    await db
+      .update("sync_jobs", {
         status: "completed",
         rows_processed: result.rowsProcessed,
         duration_ms: duration,
         finished_at: new Date().toISOString(),
       })
       .eq("id", jobId);
-  await supabase
-    .from("connections")
-    .update({
+  await db
+    .update("connections", {
       status: "connected",
       last_sync: new Date().toISOString(),
       next_sync: new Date(Date.now() + 24 * 3600_000).toISOString(),
@@ -97,7 +93,7 @@ export async function runSync(
 }
 
 async function finishFailed(
-  supabase: ReturnType<typeof unsafeAdminClient>,
+  db: TenantDb,
   restaurantId: string,
   connectionId: string,
   provider: string,
@@ -106,9 +102,8 @@ async function finishFailed(
   error: string,
 ): Promise<RunSyncResult> {
   if (jobId)
-    await supabase
-      .from("sync_jobs")
-      .update({
+    await db
+      .update("sync_jobs", {
         status: "failed",
         error,
         duration_ms: Date.now() - started,
@@ -116,15 +111,13 @@ async function finishFailed(
       })
       .eq("id", jobId);
   // Decrement health on failure (floor 0).
-  const { data: c } = await supabase
-    .from("connections")
-    .select("health")
+  const { data: c } = (await db
+    .select("connections", "health")
     .eq("id", connectionId)
-    .maybeSingle();
+    .maybeSingle()) as { data: { health: number } | null };
   const health = Math.max(0, (c?.health ?? 100) - 25);
-  await supabase
-    .from("connections")
-    .update({ status: "sync_error", last_error: error, health })
+  await db
+    .update("connections", { status: "sync_error", last_error: error, health })
     .eq("id", connectionId);
   await emitEvent({ restaurantId, type: "SyncFailed", source: provider, payload: { jobId, error } });
   return { ok: false, jobId, rowsProcessed: 0, error };

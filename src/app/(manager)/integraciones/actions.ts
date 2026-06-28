@@ -6,7 +6,7 @@ import { logAudit, requireOwner } from "@/lib/auth";
 import { emitEvent } from "@/lib/integrations/events";
 import { getAdapter, getProvider } from "@/lib/integrations/registry";
 import { runSync } from "@/lib/integrations/sync";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import type { Json } from "@/lib/database.types";
 
 export type IntegrationActionState = { error?: string; ok?: string };
@@ -22,10 +22,9 @@ export async function connectProvider(formData: FormData): Promise<void> {
   const def = getProvider(provider);
   if (!def) return;
 
-  const supabase = unsafeAdminClient();
-  await supabase.from("connections").upsert(
+  await tenantDb(owner.restaurantId).upsert(
+    "connections",
     {
-      restaurant_id: owner.restaurantId,
       provider,
       category: def.category,
       status: "connected",
@@ -58,11 +57,8 @@ export async function connectProvider(formData: FormData): Promise<void> {
 export async function disconnectProvider(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const provider = str(formData, "provider");
-  const supabase = unsafeAdminClient();
-  await supabase
-    .from("connections")
-    .update({ status: "disconnected" })
-    .eq("restaurant_id", owner.restaurantId)
+  await tenantDb(owner.restaurantId)
+    .update("connections", { status: "disconnected" })
     .eq("provider", provider);
 
   await emitEvent({
@@ -84,18 +80,14 @@ export async function disconnectProvider(formData: FormData): Promise<void> {
 export async function toggleSandbox(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const provider = str(formData, "provider");
-  const supabase = unsafeAdminClient();
-  const { data: c } = await supabase
-    .from("connections")
-    .select("sandbox")
-    .eq("restaurant_id", owner.restaurantId)
+  const db = tenantDb(owner.restaurantId);
+  const { data: c } = (await db
+    .select("connections", "sandbox")
     .eq("provider", provider)
-    .maybeSingle();
+    .maybeSingle()) as { data: { sandbox: boolean } | null };
   if (!c) return;
-  await supabase
-    .from("connections")
-    .update({ sandbox: !c.sandbox })
-    .eq("restaurant_id", owner.restaurantId)
+  await db
+    .update("connections", { sandbox: !c.sandbox })
     .eq("provider", provider);
   revalidatePath("/integraciones");
 }
@@ -104,23 +96,19 @@ export async function toggleSandbox(formData: FormData): Promise<void> {
 export async function testConnectionAction(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const provider = str(formData, "provider");
-  const supabase = unsafeAdminClient();
-  const { data: c } = await supabase
-    .from("connections")
-    .select("sandbox")
-    .eq("restaurant_id", owner.restaurantId)
+  const db = tenantDb(owner.restaurantId);
+  const { data: c } = (await db
+    .select("connections", "sandbox")
     .eq("provider", provider)
-    .maybeSingle();
+    .maybeSingle()) as { data: { sandbox: boolean } | null };
   const adapter = getAdapter(provider, c?.sandbox === false ? "production" : "sandbox");
   if (!adapter) return;
   const result = await adapter.testConnection();
-  await supabase
-    .from("connections")
-    .update({
+  await db
+    .update("connections", {
       last_error: result.ok ? null : result.message,
       status: result.ok ? "connected" : "sync_error",
     })
-    .eq("restaurant_id", owner.restaurantId)
     .eq("provider", provider);
   revalidatePath("/integraciones");
 }

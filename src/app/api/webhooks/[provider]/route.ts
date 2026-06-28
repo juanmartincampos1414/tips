@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { emitEvent } from "@/lib/integrations/events";
 import { getAdapter, getProvider } from "@/lib/integrations/registry";
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { resolveConnectionByProvider } from "@/lib/tenant/resolve";
 
 // =============================================================================
 // Webhook Manager — every provider's webhooks enter through ONE architecture:
@@ -25,15 +25,10 @@ export async function POST(
 
   const payload = await req.json().catch(() => ({}));
 
-  // Resolve the restaurant from a connection for this provider (in production a
-  // real adapter maps the payload/secret → connection).
-  const supabase = unsafeAdminClient();
-  const { data: conn } = await supabase
-    .from("connections")
-    .select("restaurant_id")
-    .eq("provider", provider)
-    .limit(1)
-    .maybeSingle();
+  // Resolve the restaurant from a connection for this provider. PLACEHOLDER (see
+  // resolveConnectionByProvider): valid only for sandbox/generic providers until
+  // a real adapter maps the payload/secret/signature → a specific tenant.
+  const conn = await resolveConnectionByProvider(provider);
 
   const result = await adapter.handleWebhook(payload);
 

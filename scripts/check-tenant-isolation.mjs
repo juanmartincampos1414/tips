@@ -27,22 +27,18 @@ const ALLOWLIST = [
 
 // Legacy files still using the raw client directly — to be migrated to tenantDb
 // tier by tier. This list ONLY shrinks. (Populated at the mechanical rename.)
+// Platform Hardening complete (Tiers 1–7): all domain data access goes through
+// tenantDb / allowlisted resolvers. The 3 files below retain unsafeAdminClient
+// for NON-table-access reasons only:
+//   - actions.ts        → Supabase Auth Admin API (createMember) + provisioning
+//                         (createRestaurant) + updateSettings.
+//   - queries.ts        → Supabase Auth Admin API (getMembers / auth.admin).
+//   - importar/actions  → import-infra tables (guest_imports / guest_import_rows
+//                         / import_logs) — a domain that never got its own tier.
 const LEGACY = [
   "src/app/actions.ts",
-  // Tier 5 (recognition) drained: t/[slug]/[code]/actions (createRecognition +
-  // review actions + captureGuest), payments/service (onApproved confirm), and
-  // the export route all left. actions.ts stays — createMember/team mgmt (T6).
-  "src/app/api/webhooks/[provider]/route.ts",
-  // Tier 3 (campaigns) fully drained: campanas/actions, emails/actions (B) +
-  // emails/activacion, email/{send,webhook,readiness}, webhooks/resend (C) all
-  // left. queries.ts stays — other domains (rewards/recognition/staff/nfc/
-  // dashboards) still read via unsafe.
-  // Tier 7 (integrations) Commit B drained: events.ts + manager.ts left.
-  // Commit C drains sync.ts, integraciones/actions, webhooks/[provider].
   "src/app/(manager)/importar/actions.ts",
-  "src/app/(manager)/integraciones/actions.ts",
   "src/lib/queries.ts",
-  "src/lib/integrations/sync.ts",
 ];
 
 const IMPORT_RE = /import\s+[^;]*\bunsafeAdminClient\b[^;]*from\s+["']@\/lib\/supabase\/admin["']/;
