@@ -8,6 +8,13 @@
 **Cómo usarlo:** una entrada por día (5 minutos). Los números salen del dashboard /
 DB; el aprendizaje sale de la observación + el [Friction Log](FRICTION_LOG.md).
 
+**La pregunta que gobierna cada día:**
+
+> **¿Qué aprendimos hoy que ayer no sabíamos?**
+
+Si la respuesta es "nada" —aunque hayamos arreglado bugs— el día aportó poco al
+producto. Si es clara —aunque no haya un commit— el producto avanzó.
+
 ---
 
 ## Horizonte 1 — Adopción (entrada diaria)
@@ -20,8 +27,9 @@ DB; el aprendizaje sale de la observación + el [Friction Log](FRICTION_LOG.md).
 - **Incidentes operativos / aislamiento:** _ (objetivo: 0)
 - **Demanda de tips** (preguntas "¿puedo dejar propina?"): _
 - **Top fricción del día:** _
-- **Aprendizaje (1 línea):** _
+- **¿Qué aprendimos hoy que ayer no sabíamos? (1 línea):** _
 - **Decisión / acción:** _ (¿bug a arreglar? ¿ajuste operativo? ¿solo observar?)
+  - _antes de ejecutar: ¿qué hipótesis valida? ¿cómo sabremos si es V/F? ¿dónde se registra?_
 
 > _(copiar este bloque por cada día del Horizonte 1)_
 

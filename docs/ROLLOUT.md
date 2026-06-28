@@ -123,3 +123,36 @@ conocimiento.** Y eso reordena el trabajo:
   activo durable, en vez de aprendizaje que se evapora en la cabeza de alguien.
 - El código se toca **solo** para bugs de operación (freeze). Todo lo demás es
   observar, documentar y aprender.
+
+### La pregunta que gobierna el piloto
+
+Durante la construcción nos preguntábamos *"¿qué deberíamos construir ahora?"*.
+Desde el primer día en Trufa, la pregunta correcta es otra:
+
+> **¿Qué aprendimos hoy que ayer no sabíamos?**
+
+Si la respuesta es "nada" —aunque hayamos corregido bugs o escrito código— el día
+aportó poco al producto. Si la respuesta es clara —aunque no haya un solo commit— el
+producto avanzó. El conocimiento **compone**: cada aprendizaje mejora las decisiones
+siguientes, cada fricción registrada evita repetir un error, cada patrón confirmado
+reduce incertidumbre. Y **la incertidumbre es el verdadero costo de una startup.**
+
+### Filtro de decisión
+
+Antes de ejecutar cualquier decisión importante, tiene que poder responder tres
+preguntas:
+1. ¿Qué **hipótesis** estamos intentando validar?
+2. ¿Cómo sabremos **objetivamente** si fue verdadera o falsa?
+3. ¿**Dónde** vamos a registrar ese aprendizaje para no volver a descubrirlo?
+
+Si una acción no responde las tres, probablemente todavía no sea el momento de
+hacerla. El objetivo del piloto no es salir con **más funcionalidades** — es salir
+con **menos incertidumbre.**
+
+### Capturar no es componer
+
+Anotar en el momento es necesario pero no suficiente. Un montón de fricciones sin
+conectar se **acumula**, no compone. El conocimiento recién compone cuando se
+**sintetiza**: la captura es disciplina diaria (Friction Log), la composición ocurre
+en el check-in semanal (Horizonte 2) y el resumen rotativo — ahí los puntos se
+vuelven patrón, y el patrón es producto.
