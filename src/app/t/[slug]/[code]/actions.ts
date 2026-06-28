@@ -1,9 +1,9 @@
 "use server";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
 import type { ReviewRoute } from "@/lib/database.types";
 import { normalizePhone } from "@/lib/phone";
 import { tenantDb, type TenantDb } from "@/lib/tenant/db";
+import { resolveReviewRequest } from "@/lib/tenant/resolve";
 import { DEFAULT_TEMPLATE, rewardValueLabel } from "@/lib/rewards";
 
 export type RecognitionState = {
@@ -36,36 +36,40 @@ export async function createRecognition(
     return { error: "El monto de la propina no es válido." };
   }
 
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(restaurantId);
+
+  // Cross-tenant guard: (staffId, restaurantId) arrive as tamperable bound args
+  // → verify the staff belongs to this tenant before writing anything.
+  const { data: staffOk } = await db
+    .select("staff", "id")
+    .eq("id", staffId)
+    .maybeSingle();
+  if (!staffOk) return { error: "Personal inválido para este local." };
 
   // Optional tip.
   let tipId: string | null = null;
   if (amount > 0) {
-    const { data: tip, error: tipErr } = await supabase
-      .from("tips")
-      .insert({ staff_id: staffId, amount, currency: "ARS" })
+    const { data: tip, error: tipErr } = await db
+      .insert("tips", { staff_id: staffId, amount, currency: "ARS" })
       .select("id")
       .single();
     if (tipErr) return { error: tipErr.message };
-    tipId = tip.id;
+    tipId = (tip as { id: string }).id;
   }
 
   // Required rating.
-  const { data: ratingRow, error: ratingErr } = await supabase
-    .from("ratings")
-    .insert({ staff_id: staffId, rating })
+  const { data: ratingRow, error: ratingErr } = await db
+    .insert("ratings", { staff_id: staffId, rating })
     .select("id")
     .single();
   if (ratingErr) return { error: ratingErr.message };
 
   // Recognition Event linking both.
-  const { data: event, error: reErr } = await supabase
-    .from("recognition_events")
-    .insert({
-      restaurant_id: restaurantId,
+  const { data: event, error: reErr } = await db
+    .insert("recognition_events", {
       staff_id: staffId,
       tip_id: tipId,
-      rating_id: ratingRow.id,
+      rating_id: (ratingRow as { id: string }).id,
       source: "nfc",
     })
     .select("id")
@@ -74,11 +78,9 @@ export async function createRecognition(
 
   // Review routing (FR-009).
   const route: ReviewRoute = rating >= 4 ? "public_review" : "private_feedback";
-  const { data: reviewRequest, error: rrErr } = await supabase
-    .from("review_requests")
-    .insert({
-      recognition_event_id: event.id,
-      restaurant_id: restaurantId,
+  const { data: reviewRequest, error: rrErr } = await db
+    .insert("review_requests", {
+      recognition_event_id: (event as { id: string }).id,
       staff_id: staffId,
       route,
     })
@@ -89,17 +91,17 @@ export async function createRecognition(
   return {
     ok: true,
     route,
-    reviewRequestId: reviewRequest.id,
-    recognitionEventId: event.id,
+    reviewRequestId: (reviewRequest as { id: string }).id,
+    recognitionEventId: (event as { id: string }).id,
   };
 }
 
 /** Guest tapped "leave a Google review": mark the request completed. */
 export async function completeReview(reviewRequestId: string) {
-  const supabase = unsafeAdminClient();
-  await supabase
-    .from("review_requests")
-    .update({ status: "completed", completed_at: new Date().toISOString() })
+  const rr = await resolveReviewRequest(reviewRequestId);
+  if (!rr) return;
+  await tenantDb(rr.restaurant_id)
+    .update("review_requests", { status: "completed", completed_at: new Date().toISOString() })
     .eq("id", reviewRequestId);
 }
 
@@ -114,10 +116,10 @@ export async function submitFeedback(
   const feedback = (formData.get("feedback") as string | null)?.trim() ?? "";
   if (!feedback) return { error: "Contanos brevemente qué podríamos mejorar." };
 
-  const supabase = unsafeAdminClient();
-  const { error } = await supabase
-    .from("review_requests")
-    .update({
+  const rr = await resolveReviewRequest(reviewRequestId);
+  if (!rr) return { error: "Solicitud inexistente." };
+  const { error } = await tenantDb(rr.restaurant_id)
+    .update("review_requests", {
       status: "completed",
       feedback,
       completed_at: new Date().toISOString(),
@@ -130,10 +132,10 @@ export async function submitFeedback(
 
 /** Guest dismissed the review/feedback step. */
 export async function ignoreReview(reviewRequestId: string) {
-  const supabase = unsafeAdminClient();
-  await supabase
-    .from("review_requests")
-    .update({ status: "ignored", completed_at: new Date().toISOString() })
+  const rr = await resolveReviewRequest(reviewRequestId);
+  if (!rr) return;
+  await tenantDb(rr.restaurant_id)
+    .update("review_requests", { status: "ignored", completed_at: new Date().toISOString() })
     .eq("id", reviewRequestId);
 }
 
@@ -235,7 +237,6 @@ export async function captureGuest(
   // Normalize the phone to E.164 (omnichannel-ready). Default AR for the pilot.
   const ph = normalizePhone(phone);
 
-  const supabase = unsafeAdminClient();
   const db = tenantDb(restaurantId); // restaurantId resolved upstream from the slug
 
   // FR-012: create if new, update if the email already exists in this restaurant.
@@ -276,9 +277,8 @@ export async function captureGuest(
   }
 
   // AC-021: associate the guest with the recognition event.
-  await supabase
-    .from("recognition_events")
-    .update({ guest_id: guestId })
+  await db
+    .update("recognition_events", { guest_id: guestId })
     .eq("id", recognitionEventId);
 
   // FR-014: emit a reward automatically.

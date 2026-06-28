@@ -2,7 +2,6 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
 import { tenantDb, type TenantDb } from "@/lib/tenant/db";
 import { resolvePaymentByToken } from "@/lib/tenant/resolve";
 import type { Json } from "@/lib/database.types";
@@ -159,13 +158,11 @@ async function onApproved(
   db: TenantDb,
   payment: { id: string; restaurant_id: string; staff_id: string | null; recognition_event_id: string | null; amount: number },
 ): Promise<void> {
-  // DEBT (Tier 5 — Recognition): the recognition confirmation stays on the
-  // unscoped client for now, but ONLY via this payment's already-resolved
-  // recognition_event_id — never an open search of recognition_events.
+  // Confirm the recognition via tenantDb, scoped by this payment's already-
+  // resolved recognition_event_id (never an open search).
   if (payment.recognition_event_id)
-    await unsafeAdminClient()
-      .from("recognition_events")
-      .update({ confirmed: true })
+    await db
+      .update("recognition_events", { confirmed: true })
       .eq("id", payment.recognition_event_id);
   if (payment.staff_id)
     await db.upsert(

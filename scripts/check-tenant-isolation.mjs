@@ -29,12 +29,9 @@ const ALLOWLIST = [
 // tier by tier. This list ONLY shrinks. (Populated at the mechanical rename.)
 const LEGACY = [
   "src/app/actions.ts",
-  "src/app/t/[slug]/[code]/actions.ts",
-  // Tier 4 (rewards): w/[pass]/v/actions left (claimByPass via resolver+tenantDb).
-  // actions.ts + t/[slug]/[code]/actions stay — other domains (createMember,
-  // recognition_events T5) still use unsafe.
-  // Tier 5 (recognition) Commit B drained: export route left (review_requests +
-  // return_visits reads now via tenantDb).
+  // Tier 5 (recognition) drained: t/[slug]/[code]/actions (createRecognition +
+  // review actions + captureGuest), payments/service (onApproved confirm), and
+  // the export route all left. actions.ts stays — createMember/team mgmt (T6).
   "src/app/api/webhooks/[provider]/route.ts",
   // Tier 3 (campaigns) fully drained: campanas/actions, emails/actions (B) +
   // emails/activacion, email/{send,webhook,readiness}, webhooks/resend (C) all
@@ -46,10 +43,6 @@ const LEGACY = [
   "src/lib/integrations/events.ts",
   "src/lib/integrations/manager.ts",
   "src/lib/integrations/sync.ts",
-  // Tier 2 (payments) drained: payments/queries, payments/events, pay/[ref]/*,
-  // pagos/actions left the list. payments/service stays — onApproved still writes
-  // recognition_events.confirmed via unsafe (Tier 5 debt).
-  "src/lib/payments/service.ts",
 ];
 
 const IMPORT_RE = /import\s+[^;]*\bunsafeAdminClient\b[^;]*from\s+["']@\/lib\/supabase\/admin["']/;
