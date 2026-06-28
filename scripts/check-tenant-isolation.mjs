@@ -37,11 +37,11 @@ const LEGACY = [
   // emails/activacion, email/{send,webhook,readiness}, webhooks/resend (C) all
   // left. queries.ts stays — other domains (rewards/recognition/staff/nfc/
   // dashboards) still read via unsafe.
+  // Tier 7 (integrations) Commit B drained: events.ts + manager.ts left.
+  // Commit C drains sync.ts, integraciones/actions, webhooks/[provider].
   "src/app/(manager)/importar/actions.ts",
   "src/app/(manager)/integraciones/actions.ts",
   "src/lib/queries.ts",
-  "src/lib/integrations/events.ts",
-  "src/lib/integrations/manager.ts",
   "src/lib/integrations/sync.ts",
 ];
 

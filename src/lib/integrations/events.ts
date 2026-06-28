@@ -1,6 +1,6 @@
 import "server-only";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 import type { Json } from "@/lib/database.types";
 
 import type { IntegrationEventType } from "./types";
@@ -19,17 +19,15 @@ export async function emitEvent(params: {
   source?: string; // 'core' (default) or a provider id
   payload?: Record<string, unknown>;
 }): Promise<void> {
-  const supabase = unsafeAdminClient();
+  const db = tenantDb(params.restaurantId);
   const source = params.source ?? "core";
-  await supabase.from("integration_events").insert({
-    restaurant_id: params.restaurantId,
+  await db.insert("integration_events", {
     type: params.type,
     source,
     payload: (params.payload ?? {}) as Json,
   });
   // Mirror to the audit trail (observability).
-  await supabase.from("audit_logs").insert({
-    restaurant_id: params.restaurantId,
+  await db.insert("audit_logs", {
     user_id: null,
     action: `event.${params.type}`,
     entity_type: "integration_event",
@@ -49,12 +47,9 @@ export async function getRecentEvents(
   restaurantId: string,
   limit = 30,
 ): Promise<RecentEvent[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("integration_events")
-    .select("id, type, source, created_at")
-    .eq("restaurant_id", restaurantId)
+  const { data } = await tenantDb(restaurantId)
+    .select("integration_events", "id, type, source, created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
-  return data ?? [];
+  return (data as RecentEvent[] | null) ?? [];
 }

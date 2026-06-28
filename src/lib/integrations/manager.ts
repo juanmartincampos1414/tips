@@ -1,6 +1,6 @@
 import "server-only";
 
-import { unsafeAdminClient } from "@/lib/supabase/admin";
+import { tenantDb } from "@/lib/tenant/db";
 
 import { PROVIDERS, type ProviderDef } from "./registry";
 import type { ConnectionStatus } from "./types";
@@ -40,13 +40,12 @@ export type IntegrationsView = {
 export async function getIntegrationsView(
   restaurantId: string,
 ): Promise<IntegrationsView> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("connections")
-    .select("id, provider, status, sandbox, last_sync, next_sync, last_error, health")
-    .eq("restaurant_id", restaurantId);
+  const { data } = await tenantDb(restaurantId).select(
+    "connections",
+    "id, provider, status, sandbox, last_sync, next_sync, last_error, health",
+  );
   const byProvider = new Map<string, ConnectionRow>(
-    (data ?? []).map((c) => [c.provider, c as ConnectionRow]),
+    ((data ?? []) as ConnectionRow[]).map((c) => [c.provider, c]),
   );
 
   const cards: IntegrationCard[] = PROVIDERS.map((p) => {
@@ -86,12 +85,12 @@ export async function getSyncJobs(
   restaurantId: string,
   limit = 20,
 ): Promise<SyncJobRow[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("sync_jobs")
-    .select("id, provider, direction, status, rows_processed, duration_ms, error, created_at")
-    .eq("restaurant_id", restaurantId)
+  const { data } = await tenantDb(restaurantId)
+    .select(
+      "sync_jobs",
+      "id, provider, direction, status, rows_processed, duration_ms, error, created_at",
+    )
     .order("created_at", { ascending: false })
     .limit(limit);
-  return data ?? [];
+  return (data as SyncJobRow[] | null) ?? [];
 }
