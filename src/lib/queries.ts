@@ -45,11 +45,9 @@ export async function getNfcInventory(
   restaurantId: string,
   status?: string,
 ): Promise<NfcWithStaff[]> {
-  const supabase = unsafeAdminClient();
-  let query = supabase
-    .from("nfc_inventory")
-    .select("*, staff:assigned_staff_id(name)")
-    .eq("restaurant_id", restaurantId)
+  const db = tenantDb(restaurantId);
+  let query = db
+    .select("nfc_inventory", "*, staff:assigned_staff_id(name)")
     .order("created_at", { ascending: false });
   if (status && (NFC_STATUSES as readonly string[]).includes(status)) {
     query = query.eq("status", status as NfcInventory["status"]);
@@ -67,12 +65,9 @@ export type NfcKpis = {
 };
 
 export async function getNfcKpis(restaurantId: string): Promise<NfcKpis> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("nfc_inventory")
-    .select("status")
-    .eq("restaurant_id", restaurantId);
-  const rows = data ?? [];
+  const db = tenantDb(restaurantId);
+  const { data } = await db.select("nfc_inventory", "status");
+  const rows = (data as { status: string }[] | null) ?? [];
   const count = (s: string) => rows.filter((r) => r.status === s).length;
   return {
     total: rows.length,
@@ -87,20 +82,18 @@ export async function getNfcKpis(restaurantId: string): Promise<NfcKpis> {
 export async function getStaffWithBand(
   restaurantId: string,
 ): Promise<StaffWithBand[]> {
-  const supabase = unsafeAdminClient();
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("restaurant_id", restaurantId)
+  const db = tenantDb(restaurantId);
+  const { data: staff } = (await db
+    .select("staff", "*")
     .neq("status", "archived")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })) as { data: Staff[] | null };
   if (!staff?.length) return [];
 
-  const { data: bands } = await supabase
-    .from("nfc_inventory")
-    .select("uid, serial_number, assigned_staff_id")
-    .eq("restaurant_id", restaurantId)
-    .eq("status", "assigned");
+  const { data: bands } = (await db
+    .select("nfc_inventory", "uid, serial_number, assigned_staff_id")
+    .eq("status", "assigned")) as {
+    data: { uid: string; serial_number: string; assigned_staff_id: string }[] | null;
+  };
 
   const byStaff = new Map(
     (bands ?? []).map((b) => [b.assigned_staff_id, b]),
@@ -115,16 +108,15 @@ export async function getStaffWithBand(
 }
 
 export async function getStaffBand(
+  restaurantId: string,
   staffId: string,
 ): Promise<NfcInventory | null> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("nfc_inventory")
-    .select("*")
+  const { data } = await tenantDb(restaurantId)
+    .select("nfc_inventory", "*")
     .eq("assigned_staff_id", staffId)
     .eq("status", "assigned")
     .maybeSingle();
-  return data ?? null;
+  return (data as NfcInventory | null) ?? null;
 }
 
 export type NfcEventRow = {
@@ -136,57 +128,17 @@ export type NfcEventRow = {
 
 /** Full NFC history for a staff member (every band ever involving them). */
 export async function getStaffNfcHistory(
+  restaurantId: string,
   staffId: string,
 ): Promise<NfcEventRow[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("nfc_events")
-    .select("id, event, created_at, nfc_inventory(uid, serial_number)")
+  const { data } = await tenantDb(restaurantId)
+    .select("nfc_events", "id, event, created_at, nfc_inventory(uid, serial_number)")
     .eq("staff_id", staffId)
     .order("created_at", { ascending: false });
   return (data as NfcEventRow[] | null) ?? [];
 }
 
-/**
- * Public guest flow: resolve the staff member behind an NFC tap.
- * URL is /t/:slug/:code where :slug is the restaurant slug and :code is the
- * band's nfc_code. Returns the active staff + restaurant, or null (→ 404).
- */
-export async function resolvePublicStaff(
-  slug: string,
-  code: string,
-): Promise<{ restaurant: Restaurant; staff: Staff } | null> {
-  const supabase = unsafeAdminClient();
-
-  const { data: restaurant } = await supabase
-    .from("restaurants")
-    .select("*")
-    .eq("slug", slug)
-    .eq("status", "active")
-    .maybeSingle();
-  if (!restaurant) return null;
-
-  // Resolve the band by its uid in the inventory (must be assigned).
-  const { data: band } = await supabase
-    .from("nfc_inventory")
-    .select("assigned_staff_id")
-    .eq("restaurant_id", restaurant.id)
-    .eq("uid", code)
-    .eq("status", "assigned")
-    .maybeSingle();
-  if (!band?.assigned_staff_id) return null;
-
-  const { data: staff } = await supabase
-    .from("staff")
-    .select("*")
-    .eq("id", band.assigned_staff_id)
-    .eq("restaurant_id", restaurant.id)
-    .eq("status", "active")
-    .maybeSingle();
-  if (!staff) return null;
-
-  return { restaurant, staff };
-}
+// resolvePublicStaff (the NFC-tap public resolver) moved to tenant/resolve.ts.
 
 /** Records a Visit for a guest opening a staff profile (FR-005 / AC-006). */
 export async function recordVisit(restaurantId: string, staffId: string) {
@@ -217,23 +169,19 @@ export async function getCurrentRestaurant(): Promise<Restaurant | null> {
 export async function getStaffWithNfc(
   restaurantId: string,
 ): Promise<StaffWithNfc[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("staff")
-    .select("*, nfc_tags(*)")
-    .eq("restaurant_id", restaurantId)
+  const { data } = await tenantDb(restaurantId)
+    .select("staff", "*, nfc_tags(*)")
     .neq("status", "archived")
     .order("created_at", { ascending: false });
   return (data as StaffWithNfc[] | null) ?? [];
 }
 
 export async function getStaffById(
+  restaurantId: string,
   staffId: string,
 ): Promise<StaffWithNfc | null> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("staff")
-    .select("*, nfc_tags(*)")
+  const { data } = await tenantDb(restaurantId)
+    .select("staff", "*, nfc_tags(*)")
     .eq("id", staffId)
     .maybeSingle();
   return (data as StaffWithNfc | null) ?? null;
@@ -412,11 +360,7 @@ export async function getDashboardKpis(
     db.select("rewards", "id", head).eq("status", "active"),
     db.select("rewards", "id", head).eq("status", "claimed"),
     db.select("rewards", "id", head),
-    supabase
-      .from("staff")
-      .select("id", head)
-      .eq("restaurant_id", restaurantId)
-      .eq("status", "active"),
+    db.select("staff", "id", head).eq("status", "active"),
     supabase
       .from("return_visits")
       .select("guest_id")
@@ -518,14 +462,11 @@ export async function getMembers(restaurantId: string): Promise<MemberRow[]> {
 export async function getStaffOptions(
   restaurantId: string,
 ): Promise<{ id: string; name: string }[]> {
-  const supabase = unsafeAdminClient();
-  const { data } = await supabase
-    .from("staff")
-    .select("id, name")
-    .eq("restaurant_id", restaurantId)
+  const { data } = await tenantDb(restaurantId)
+    .select("staff", "id, name")
     .neq("status", "archived")
     .order("name");
-  return data ?? [];
+  return (data as { id: string; name: string }[] | null) ?? [];
 }
 
 type GuestNote = Database["public"]["Tables"]["guest_notes"]["Row"];
@@ -1024,11 +965,7 @@ export async function getStaffImpact(
     { data: returns },
     { data: campReturns },
   ] = await Promise.all([
-    supabase
-      .from("staff")
-      .select("id, name")
-      .eq("restaurant_id", restaurantId)
-      .neq("status", "archived"),
+    db.select("staff", "id, name").neq("status", "archived"),
     db.select("recognition_events", "id, staff_id, rating_id"),
     db.select("ratings", "id, rating"),
     db.select("review_requests", "recognition_event_id, route, status"),
@@ -1122,15 +1059,10 @@ export type DashboardStats = {
 export async function getDashboardStats(
   restaurantId: string,
 ): Promise<DashboardStats> {
-  const supabase = unsafeAdminClient();
   const db = tenantDb(restaurantId);
 
   const [{ count: staffCount }, { count: visitCount }] = await Promise.all([
-    supabase
-      .from("staff")
-      .select("id", { count: "exact", head: true })
-      .eq("restaurant_id", restaurantId)
-      .neq("status", "archived"),
+    db.select("staff", "id", { count: "exact", head: true }).neq("status", "archived"),
     db.select("visits", "id", { count: "exact", head: true }),
   ]);
 

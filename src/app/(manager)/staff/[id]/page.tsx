@@ -7,6 +7,7 @@ import {
   getStaffById,
   getStaffNfcHistory,
 } from "@/lib/queries";
+import { requireTenant } from "@/lib/tenant/context";
 import type { NfcEventType } from "@/lib/database.types";
 
 const EVENT_LABEL: Record<NfcEventType, string> = {
@@ -34,12 +35,13 @@ export default async function StaffDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const staff = await getStaffById(id);
+  const { restaurantId } = await requireTenant();
+  const staff = await getStaffById(restaurantId, id);
   if (!staff || staff.status === "archived") notFound();
 
   const [band, history] = await Promise.all([
-    getStaffBand(id),
-    getStaffNfcHistory(id),
+    getStaffBand(restaurantId, id),
+    getStaffNfcHistory(restaurantId, id),
   ]);
 
   return (

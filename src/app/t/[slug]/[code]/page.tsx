@@ -1,7 +1,8 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
 
-import { getSettings, recordVisit, resolvePublicStaff } from "@/lib/queries";
+import { getSettings, recordVisit } from "@/lib/queries";
+import { resolvePublicStaff } from "@/lib/tenant/resolve";
 
 import { RecognitionForm } from "./recognition-form";
 
